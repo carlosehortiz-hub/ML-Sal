@@ -1,0 +1,14 @@
+# Dados
+ml_sal.db
+matriz_cloretos.csv
+
+# Outputs
+shap_global.png
+shap_local.png
+
+# Python
+__pycache__/
+*.pyc
+
+# Sistema
+.DS_Store
