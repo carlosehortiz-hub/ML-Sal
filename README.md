@@ -1,116 +1,190 @@
-# ML-Sal  
-Análise do desvio de sal em processos industriais através de Machine Learning explicável
+ML-Sal
 
-## 1. Enquadramento
-O controlo do teor de sal em processos de salga é um fator crítico para a conformidade do produto e para a estabilidade do processo industrial. No entanto, o desvio do teor de sal relativamente às especificações pode resultar da interação de múltiplas variáveis de processo, nem sempre facilmente identificáveis por métodos tradicionais.
+Análise explicável de desvios de sal em processos industriais
 
-Neste contexto, o presente projeto tem como objetivo aplicar técnicas de **Machine Learning explicável** para analisar o **desvio percentual de sal**, explorando padrões históricos do processo e apoiando a compreensão das variáveis mais relevantes associadas a esses desvios.
+📌 Objetivo do projeto
 
----
+Este projeto tem como objetivo analisar e explicar desvios de sal (% sal) num processo industrial, utilizando Machine Learning explicável, sem alterar a base de dados e respeitando pressupostos físicos do processo.
 
-## 2. Objetivos
-Os principais objetivos do projeto são:
-- modelar a relação entre condições operacionais e o desvio percentual de sal;
-- identificar, de forma global e local, as variáveis mais influentes no desvio observado;
-- permitir a análise de casos específicos (lotes);
-- realizar simulações do tipo *what-if* para avaliar cenários alternativos;
-- apoiar a tomada de decisão em contexto de melhoria contínua.
+O sistema foi desenhado para responder à pergunta:
 
-O foco do trabalho é **explicativo e analítico**, e não a previsão em tempo real.
+“Dado um desvio de sal observado, quais as variáveis medidas que mais contribuíram para esse desvio neste caso específico?”
 
----
+⸻
 
-## 3. Formulação do problema
-O problema foi formulado como um **problema de regressão supervisionada**, onde:
-- a variável dependente é o desvio percentual de sal (`dif_pct_sal`);
-- as variáveis independentes incluem parâmetros de processo (pH, temperatura, densidade, tempos fora de especificação), diferenças operacionais e a referência do produto.
+🧠 Princípios fundamentais
 
-Os dados utilizados correspondem a registos históricos do processo.
+O projeto assenta em quatro princípios-chave:
 
----
+1️⃣ O processo vem antes do modelo
 
-## 4. Modelo de Machine Learning
-Foi utilizado um **Random Forest Regressor**, um modelo baseado em *ensemble learning* que combina múltiplas árvores de decisão independentes.
+Antes de qualquer análise de ML, o sistema valida se o sinal do desvio observado (dif_pct_sal) é fisicamente coerente com pressupostos conhecidos do processo (ex.: ES e HFD).
 
-Este modelo foi escolhido por apresentar:
-- capacidade de modelar relações não lineares;
-- robustez a ruído e a dados incompletos;
-- boa performance em conjuntos de dados industriais;
-- compatibilidade com métodos de interpretação local e global.
+Casos incoerentes são automaticamente classificados como INCONCLUSIVOS.
 
-A previsão final resulta da média das previsões das árvores individuais, reduzindo o risco de sobreajuste.
+⸻
 
----
+2️⃣ O modelo não altera dados
+	•	A base de dados nunca é modificada durante análises
+	•	O utilizador apenas consulta e simula
+	•	O sistema é seguro para partilha
 
-## 5. Interpretação do modelo
-Para garantir transparência e interpretabilidade, foram utilizadas técnicas de **SHAP (SHapley Additive exPlanations)**, permitindo:
-- análise global da importância das variáveis ao longo do conjunto de dados;
-- análise local para explicar desvios em casos específicos.
+⸻
 
-Estas explicações permitem compreender quais variáveis contribuem positiva ou negativamente para o desvio previsto, em cada contexto.
+3️⃣ Explicação local, não global
 
----
+O foco é sempre:
+	•	um lote
+	•	um registo específico
+	•	uma explicação local
 
-## 6. Simulações “what-if”
-O modelo é utilizado para realizar simulações contrafactuais, mantendo todas as variáveis constantes e alterando apenas uma ou mais condições de processo.
+Não são feitas inferências globais ou generalizações automáticas.
 
-Estas simulações permitem:
-- avaliar a sensibilidade do desvio a alterações específicas;
-- comparar cenários alternativos;
-- distinguir variáveis explicativas de variáveis que constituem potenciais alavancas de atuação.
+⸻
 
-Os resultados devem ser interpretados como **evidência estatística baseada em dados históricos**, e não como causalidade física direta.
+4️⃣ Explicabilidade humana
 
----
+Os resultados são apresentados de forma:
+	•	visual
+	•	direcional (empurra vs compensa)
+	•	com valores reais do processo
+	•	compreensíveis para pessoas sem background em ML
 
-## 7. Estrutura do projeto
+⸻
+
+🗂️ Estrutura do projeto
 ML-Sal/
 │
-├── importar_historico.py        # Importação inicial de dados históricos
-├── criar_tabela.py              # Criação da estrutura da base de dados
-├── inserir_desvio_manual.py     # Inserção manual de novos desvios
-├── verificar_base.py            # Verificação da base de dados
+├── .gitignore
+├── README.md
 │
-├── preparar_dados_ml.py         # Preparação e limpeza dos dados
-├── treinar_modelo_baseline.py   # Treino do modelo de Random Forest
+├── dados/
+│   ├── matriz_cloretos.csv        # Fonte histórica original (opcional)
+│   └── ml_sal.db                  # Base de dados SQLite (histórico consolidado)
 │
-├── explicacao_global.py         # Análise explicativa global (SHAP)
-├── explicacao_local.py          # Análise explicativa local
+├── base_dados/
+│   ├── criar_tabela.py            # Criação da tabela SQLite
+│   ├── importar_historico.py      # Importação inicial do histórico
+│   ├── verificar_base.py          # Verificação da integridade da base
+│   ├── verificar_insercao.py      # Confirmação de inserções
+│   └── apagar_ultimo_registo.py   # Remoção controlada do último registo
 │
-├── simulacao_what_if.py         # Simulações interativas de cenários
-├── listar_variaveis.py          # Listagem das variáveis disponíveis
+├── ml/
+│   ├── preparar_dados_ml.py       # Preparação dos dados para ML
+│   └── treinar_modelo_baseline.py # Treino do modelo base
 │
-├── ordem_execuao.txt            # Ordem de execução dos scripts
-├── .gitignore                   # Exclusão de dados e outputs
-└── README.md                    # Documentação do projeto
+├── analise/
+│   ├── explicacao_local.py        # ⭐ Análise local explicável (principal)
+│   ├── explicacao_global.py       # Análise global (exploratória)
+│   └── simulacao_what_if.py       # Simulações contrafactuais (what-if)
+│
+├── utilitarios/
+│   ├── inserir_desvio_manual.py   # Inserção manual robusta (inputs validados)
+│   └── listar_variaveis.py        # Listagem das variáveis disponíveis
+│
+├── outputs/
+│   ├── shap_local.png             # Gráfico de explicação local
+│   └── shap_global.png            # Gráfico de explicação global
+│
+├── docs/
+│   └── ordem_execucao.txt         # Ordem recomendada de execução
+│
+└── subir_github.sh                # Script para commit & push para GitHub
 
-> Nota: Os dados reais não são versionados no repositório por motivos de confidencialidade.
 
----
+⸻
 
-## 8. Fluxo de utilização
-O fluxo típico de utilização do projeto é:
-1. inserção de novos desvios na base de dados;
-2. preparação dos dados;
-3. treino do modelo com o histórico atualizado;
-4. análise explicativa global ou local, conforme necessário;
-5. realização de simulações *what-if* para apoio à decisão.
+⚙️ Tecnologias utilizadas
+	•	Python 3
+	•	SQLite
+	•	pandas
+	•	scikit-learn
+	•	SHAP
+	•	matplotlib
 
-A sequência detalhada encontra-se descrita no ficheiro `ordem_execuao.txt`.
+⸻
 
----
+🔍 Fluxo de utilização recomendado
 
-## 9. Limitações
-- O modelo não estabelece relações causais físicas;
-- os resultados são válidos apenas dentro do domínio dos dados históricos;
-- o modelo não substitui conhecimento de processo nem ferramentas clássicas de controlo estatístico.
+1️⃣ Preparar a base de dados (uma vez)
 
----
+python criar_tabela.py
+python importar_historico.py
+python verificar_base.py
+⸻
 
-## 10. Contexto académico
-Este projeto foi desenvolvido no âmbito de um **mestrado**, integrando conceitos de ciência de dados, machine learning explicável e melhoria contínua de processos industriais.
+2️⃣ Analisar um desvio específico (uso normal)
+python explicacao_local.py
+O utilizador:
+	•	introduz o lote
+	•	escolhe o registo (se necessário)
+	•	recebe:
+	•	validação física
+	•	gráfico explicável (shap_local.png)
+	•	interpretação textual
 
----
+⸻
 
-## Autor
-Carlos Ortiz
+3️⃣ Simulações “what-if” (opcional)
+python simulacao_what_if.py
+Permite testar cenários hipotéticos sem guardar dados.
+
+⸻
+
+📊 Estrutura do gráfico de explicação local
+
+O gráfico gerado (shap_local.png) segue estas regras:
+	•	🔴 Vermelho → variável que empurra o desvio
+	•	🟢 Verde → variável que compensa o desvio
+	•	Comprimento da barra → magnitude do impacto local
+	•	Percentagem → peso relativo no caso analisado
+	•	Valor medido → apresentado no eixo Y
+	•	Legendas:
+	•	≥ 15% → dentro da barra
+	•	< 15% → junto ao eixo central (0)
+
+O gráfico não representa causalidade absoluta, apenas sensibilidade local do modelo.
+
+⸻
+
+🚫 Casos inconclusivos
+
+A análise é automaticamente classificada como INCONCLUSIVA quando:
+	•	O sinal do desvio observado (dif_pct_sal)
+	•	contradiz pressupostos físicos do processo
+	•	e a variável em causa é dominante no caso
+
+Nestes casos:
+	•	❌ nenhum gráfico é gerado
+	•	✅ é apresentada uma explicação textual clara
+
+⸻
+
+🎓 Contexto académico
+
+Este projeto foi desenvolvido com enfoque em:
+	•	explicabilidade
+	•	robustez conceptual
+	•	integração entre conhecimento de processo e ML
+	•	transparência na tomada de decisão
+
+É adequado para:
+	•	trabalhos académicos
+	•	projetos de engenharia
+	•	demonstrações de ML explicável aplicado à indústria
+
+⸻
+
+📌 Limitações conhecidas
+	•	O modelo é local, não causal
+	•	Variáveis não medidas podem explicar parte do desvio
+	•	Resultados devem ser interpretados com conhecimento de processo
+
+⸻
+
+📄 Licença
+
+Projeto para fins educativos e académicos.
+Sem identificação de contexto industrial específico.
+
+⸻
