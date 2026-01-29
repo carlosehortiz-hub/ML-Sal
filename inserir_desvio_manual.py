@@ -237,8 +237,7 @@ temperatura = input_float(
 
 min_fora = input_float(
     "Minutos fora de especificação",
-    exemplo="25",
-    minimo=0
+    exemplo="25"
 )
 
 tempo_fora_espec = input_choice(
