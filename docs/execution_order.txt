@@ -2,49 +2,49 @@
 
 Step 0 — (optional, just to confirm)
 
-base_dados/verificar_base.py
+database/verify_database.py
 → confirms that the database and table exist
 
 ⸻
 
 Step 1 — Prepare the data
 
-ml/preparar_dados_ml.py
+ml/prepare_ml_data.py
 → cleans data, imputes, and creates the final ML dataset
 
 ⸻
 
 Step 2 — Data quality report
 
-utilitarios/qualidade_dados.py
+utilities/data_quality.py
 → reports missing values, rule violations, and IQR outliers
 
 ⸻
 
 Step 3 — Train the model
 
-ml/treinar_modelo_baseline.py
+ml/train_baseline_model.py
 → trains the Random Forest and evaluates performance (R², RMSE)
 
 ⸻
 
 Step 4 — Global explanation
 
-analise/explicacao_global.py
+analysis/global_explanation.py
 → generates the global SHAP chart (outputs/shap_global.png)
 
 ⸻
 
 Step 5 — Local explanation (specific case)
 
-analise/explicacao_local.py
+analysis/local_explanation.py
 → generates the local SHAP (outputs/shap_local.png) for a selected record
 
 ⸻
 
 Step 6 — What-if simulations
 
-analise/simulacao_what_if.py
+analysis/what_if_simulation.py
 → simulates variable changes and observes the impact on predicted deviation
 
 ⸻

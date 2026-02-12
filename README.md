@@ -67,27 +67,27 @@ ML-Sal/
 ├── outputs/
 │   ├── shap_local.png
 │   └── shap_global.png
-├── analise/
-│   ├── explicacao_local.py
-│   ├── explicacao_global.py
-│   └── simulacao_what_if.py
-├── base_dados/
-│   ├── criar_tabela.py
-│   ├── importar_historico.py
-│   ├── verificar_base.py
-│   ├── verificar_insercao.py
-│   └── apagar_ultimo_registo.py
+├── analysis/
+│   ├── local_explanation.py
+│   ├── global_explanation.py
+│   └── what_if_simulation.py
+├── database/
+│   ├── create_table.py
+│   ├── import_history.py
+│   ├── verify_database.py
+│   ├── verify_inserts.py
+│   └── delete_last_record.py
 ├── ml/
 │   ├── __init__.py
 │   ├── ml_utils.py
-│   ├── preparar_dados_ml.py
-│   └── treinar_modelo_baseline.py
-├── utilitarios/
-│   ├── inserir_desvio_manual.py
-│   ├── listar_variaveis.py
-│   └── qualidade_dados.py
+│   ├── prepare_ml_data.py
+│   └── train_baseline_model.py
+├── utilities/
+│   ├── insert_deviation_manual.py
+│   ├── list_variables.py
+│   └── data_quality.py
 └── docs/
-    └── ordem_execuao.txt
+    └── execution_order.txt
 
 
 ⸻
@@ -112,21 +112,21 @@ Option B — Run steps manually
 
 1️⃣ Prepare the database (once)
 
-python base_dados/criar_tabela.py
-python base_dados/importar_historico.py
-python base_dados/verificar_base.py
+python database/create_table.py
+python database/import_history.py
+python database/verify_database.py
 
 ⸻
 
 2️⃣ Run a data quality report
 
-python utilitarios/qualidade_dados.py
+python utilities/data_quality.py
 
 ⸻
 
 3️⃣ Analyze a specific deviation (normal use)
 
-python analise/explicacao_local.py
+python analysis/local_explanation.py
 
 The user:
 	•	enters the batch
@@ -140,7 +140,7 @@ The user:
 
 4️⃣ “What-if” simulations (optional)
 
-python analise/simulacao_what_if.py
+python analysis/what_if_simulation.py
 
 Allows testing hypothetical scenarios without saving data.
 
@@ -166,7 +166,7 @@ The chart does not represent absolute causality, only local model sensitivity.
 
 Local/global explanations and what-if simulations reuse a cached model to avoid retraining on every run. If you want to force a retrain, run with:
 
-RETRAIN_MODEL=1 python analise/explicacao_local.py
+RETRAIN_MODEL=1 python analysis/local_explanation.py
 
 ⸻
 
