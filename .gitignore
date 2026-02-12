@@ -6,6 +6,10 @@ matriz_cloretos.csv
 shap_global.png
 shap_local.png
 
+# Scripts (local)
+subir_github.sh
+subir_github_branch.sh
+
 # Python
 __pycache__/
 *.pyc
