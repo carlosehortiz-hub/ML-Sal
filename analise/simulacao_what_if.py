@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ml_utils import load_data, build_features, get_model, transform_features
+from ml.ml_utils import load_data, build_features, get_model, transform_features
 
 # =========================
 # Read data

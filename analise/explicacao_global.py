@@ -1,8 +1,8 @@
-import pandas as pd
+import os
 import shap
 import matplotlib.pyplot as plt
 
-from ml_utils import load_data, build_features, get_model, transform_features
+from ml.ml_utils import load_data, build_features, get_model, transform_features, OUTPUTS_DIR
 
 # =========================
 # Read data
@@ -40,7 +40,9 @@ shap.summary_plot(
 )
 
 plt.tight_layout()
-plt.savefig("shap_global.png", dpi=150)
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
+shap_global_path = os.path.join(OUTPUTS_DIR, "shap_global.png")
+plt.savefig(shap_global_path, dpi=150)
 plt.close()
 
-print("✅ Global SHAP (without reference) saved to shap_global.png")
+print(f"✅ Global SHAP (without reference) saved to {shap_global_path}")

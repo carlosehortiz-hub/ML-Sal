@@ -1,9 +1,10 @@
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import shap
 
-from ml_utils import load_data, build_features, get_model, transform_features
+from ml.ml_utils import load_data, build_features, get_model, transform_features, OUTPUTS_DIR
 
 # ======================================================
 # 1. Read data
@@ -222,7 +223,9 @@ plt.title(
 )
 
 plt.tight_layout()
-plt.savefig("shap_local.png", dpi=150)
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
+shap_local_path = os.path.join(OUTPUTS_DIR, "shap_local.png")
+plt.savefig(shap_local_path, dpi=150)
 plt.close()
 
 # ======================================================
@@ -234,5 +237,5 @@ print("The analysis was considered COHERENT.")
 print("The dominant variable respects the")
 print("physical process assumptions, allowing interpretation.")
 
-print("\n📄 File generated: shap_local.png")
+print(f"\n📄 File generated: {shap_local_path}")
 print("✅ Analysis completed")

@@ -5,6 +5,10 @@ from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestRegressor
 import joblib
 
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+
 NUM_COLS = [
     "dif_es",
     "dif_hfd",
@@ -27,10 +31,12 @@ DROP_COLS = [
     "dif_pct_sal",
 ]
 
-MODEL_PATH = "models/rf_model.joblib"
+MODEL_PATH = os.path.join(MODELS_DIR, "rf_model.joblib")
 
 
-def load_data(db_path="ml_sal.db"):
+def load_data(db_path=None):
+    if db_path is None:
+        db_path = os.path.join(BASE_DIR, "ml_sal.db")
     conn = sqlite3.connect(db_path)
     df = pd.read_sql("SELECT * FROM desvios_sal", conn)
     conn.close()

@@ -1,4 +1,4 @@
-from ml_utils import load_data, data_quality_report
+from ml.ml_utils import load_data, data_quality_report
 
 
 def main():

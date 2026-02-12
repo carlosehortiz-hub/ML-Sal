@@ -3,8 +3,11 @@ ml_sal.db
 matriz_cloretos.csv
 
 # Outputs
-shap_global.png
-shap_local.png
+outputs/shap_global.png
+outputs/shap_local.png
+
+# Model cache
+models/
 
 # Scripts (local)
 subir_github.sh

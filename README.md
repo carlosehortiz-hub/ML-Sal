@@ -52,36 +52,42 @@ Results are presented in a way that is:
 
 ⸻
 
-🗂️ Project structure (current flat layout)
+🗂️ Project structure
 
 ML-Sal/
 ├── .gitignore
 ├── README.md
-├── apagar_ultimo_registo.py
-├── criar_tabela.py
-├── explicacao_global.py
-├── explicacao_local.py
-├── importar_historico.py
-├── inserir_desvio_manual.py
-├── listar_variaveis.py
-├── matriz_cloretos.csv
 ├── menu.py
-├── ml_sal.db
-├── ml_utils.py
-├── ordem_execuao.txt
-├── preparar_dados_ml.py
-├── qualidade_dados.py
-├── shap_global.png
-├── shap_local.png
-├── simulacao_what_if.py
 ├── subir_github.sh
 ├── subir_github_branch.sh
-├── treinar_modelo_baseline.py
-├── verificar_base.py
-└── verificar_insercao.py
-
-models/
-└── rf_model.joblib
+├── ml_sal.db
+├── matriz_cloretos.csv
+├── models/
+│   └── rf_model.joblib
+├── outputs/
+│   ├── shap_local.png
+│   └── shap_global.png
+├── analise/
+│   ├── explicacao_local.py
+│   ├── explicacao_global.py
+│   └── simulacao_what_if.py
+├── base_dados/
+│   ├── criar_tabela.py
+│   ├── importar_historico.py
+│   ├── verificar_base.py
+│   ├── verificar_insercao.py
+│   └── apagar_ultimo_registo.py
+├── ml/
+│   ├── __init__.py
+│   ├── ml_utils.py
+│   ├── preparar_dados_ml.py
+│   └── treinar_modelo_baseline.py
+├── utilitarios/
+│   ├── inserir_desvio_manual.py
+│   ├── listar_variaveis.py
+│   └── qualidade_dados.py
+└── docs/
+    └── ordem_execuao.txt
 
 
 ⸻
@@ -106,35 +112,35 @@ Option B — Run steps manually
 
 1️⃣ Prepare the database (once)
 
-python criar_tabela.py
-python importar_historico.py
-python verificar_base.py
+python base_dados/criar_tabela.py
+python base_dados/importar_historico.py
+python base_dados/verificar_base.py
 
 ⸻
 
 2️⃣ Run a data quality report
 
-python qualidade_dados.py
+python utilitarios/qualidade_dados.py
 
 ⸻
 
 3️⃣ Analyze a specific deviation (normal use)
 
-python explicacao_local.py
+python analise/explicacao_local.py
 
 The user:
 	•	enters the batch
 	•	chooses the record (if needed)
 	•	receives:
 	•	physical validation
-	•	explainable chart (shap_local.png)
+	•	explainable chart (outputs/shap_local.png)
 	•	text interpretation
 
 ⸻
 
 4️⃣ “What-if” simulations (optional)
 
-python simulacao_what_if.py
+python analise/simulacao_what_if.py
 
 Allows testing hypothetical scenarios without saving data.
 
@@ -142,7 +148,7 @@ Allows testing hypothetical scenarios without saving data.
 
 📊 Local explanation chart structure
 
-The generated chart (shap_local.png) follows these rules:
+The generated chart (outputs/shap_local.png) follows these rules:
 	•	🔴 Red → variable that pushes the deviation
 	•	🟢 Green → variable that compensates the deviation
 	•	Bar length → magnitude of local impact
@@ -160,7 +166,7 @@ The chart does not represent absolute causality, only local model sensitivity.
 
 Local/global explanations and what-if simulations reuse a cached model to avoid retraining on every run. If you want to force a retrain, run with:
 
-RETRAIN_MODEL=1 python explicacao_local.py
+RETRAIN_MODEL=1 python analise/explicacao_local.py
 
 ⸻
 

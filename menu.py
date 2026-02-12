@@ -2,15 +2,15 @@ import subprocess
 import sys
 
 MENU = {
-    "1": ("Import history", "importar_historico.py"),
-    "2": ("Verify database", "verificar_base.py"),
-    "3": ("Data quality report", "qualidade_dados.py"),
-    "4": ("Local explanation", "explicacao_local.py"),
-    "5": ("Global explanation", "explicacao_global.py"),
-    "6": ("What-if simulation", "simulacao_what_if.py"),
-    "7": ("Manual insert", "inserir_desvio_manual.py"),
-    "8": ("Verify inserts", "verificar_insercao.py"),
-    "9": ("Delete last record", "apagar_ultimo_registo.py"),
+    "1": ("Import history", "base_dados/importar_historico.py"),
+    "2": ("Verify database", "base_dados/verificar_base.py"),
+    "3": ("Data quality report", "utilitarios/qualidade_dados.py"),
+    "4": ("Local explanation", "analise/explicacao_local.py"),
+    "5": ("Global explanation", "analise/explicacao_global.py"),
+    "6": ("What-if simulation", "analise/simulacao_what_if.py"),
+    "7": ("Manual insert", "utilitarios/inserir_desvio_manual.py"),
+    "8": ("Verify inserts", "base_dados/verificar_insercao.py"),
+    "9": ("Delete last record", "base_dados/apagar_ultimo_registo.py"),
     "0": ("Exit", None),
 }
 
