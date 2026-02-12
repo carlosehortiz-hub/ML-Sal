@@ -14,6 +14,8 @@ from ml.ml_utils import (
 
 st.set_page_config(page_title="ML-Sal", layout="wide")
 
+ERROR_EPS = 0.01
+
 
 def check_inconclusive(impact_df, dif_sal, dif_es, dif_hfd):
     if impact_df.empty:
@@ -196,7 +198,7 @@ st.title("ML-Sal — Local Explanation")
 
 mode = st.radio(
     "Choose a mode",
-    ("Use existing record", "Manual input (no DB write)"),
+    ("Use existing record", "Manual input (no DB write)", "What-if simulation"),
 )
 
 
@@ -258,7 +260,7 @@ if mode == "Use existing record":
         st.success("COHERENT ANALYSIS")
         plot_impact(impact_df, row["ph_entrada"])
 
-else:
+elif mode == "Manual input (no DB write)":
     st.subheader("Manual input (not saved)")
 
     references = sorted(df["referencia"].dropna().unique())
@@ -396,3 +398,129 @@ else:
             else:
                 st.success("COHERENT ANALYSIS")
                 plot_impact(impact_df, ph_entrada)
+else:
+    st.subheader("What-if simulation")
+
+    lotes = sorted(df["lote"].dropna().unique())
+    if not lotes:
+        st.error("No batches available.")
+        st.stop()
+
+    lote = st.selectbox("Batch", lotes, key="what_if_batch")
+
+    df_lote = df[df["lote"] == lote].copy()
+    df_lote = df_lote.reset_index()
+
+    st.dataframe(
+        df_lote[["index", "data", "cuba", "dif_pct_sal"]],
+        use_container_width=True,
+    )
+
+    def label_row_wi(r):
+        return f"{r['index']} | {r['data']} | Vat {r['cuba']} | diff {r['dif_pct_sal']:.3f}"
+
+    options = df_lote.apply(label_row_wi, axis=1).tolist()
+    selected = st.selectbox("Base record", options, key="what_if_record")
+    row_idx = int(selected.split("|")[0].strip())
+
+    row = df.loc[row_idx]
+    raw_values = row[NUM_COLS].values
+    base_X = transform_features(imputer, pd.DataFrame([raw_values], columns=NUM_COLS))
+    base_values = base_X.iloc[0].values.astype(float)
+    base_pred = model.predict(base_X)[0]
+    obs = float(row["dif_pct_sal"])
+    err_abs = abs(obs - base_pred)
+    err_pct = err_abs / max(abs(obs), ERROR_EPS) * 100
+
+    st.markdown("---")
+    st.write(
+        f"**Batch:** {row['lote']} | **Vat:** {row['cuba']} | **Date:** {row['data']}"
+    )
+    st.write(f"**Observed deviation:** {obs:.3f}")
+    st.write(f"**Baseline predicted deviation:** {base_pred:.3f}")
+    st.write(f"**Unexplained % (obs vs baseline):** {err_pct:.1f}%")
+    st.caption("Relative error uses max(|observed|, 0.01) to avoid near-zero blow-up.")
+
+    with st.form("what_if_form"):
+        st.markdown("**Adjust variables**")
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            dif_es = st.number_input("Dif_ES", value=float(base_values[0]))
+            ph_entrada = st.selectbox(
+                "Input pH",
+                [0, 1],
+                index=int(round(base_values[3])),
+                format_func=lambda x: "OK" if x == 0 else "NOK",
+            )
+            dens_min = min(0.0, float(base_values[5]))
+            densidade = st.number_input("Density", min_value=dens_min, value=float(base_values[5]))
+
+        with col2:
+            dif_hfd = st.number_input("Dif_HFD", value=float(base_values[1]))
+            ph_min = min(3.5, float(base_values[4]))
+            ph_max = max(7.5, float(base_values[4]))
+            ph_salga = st.number_input(
+                "Brine pH",
+                min_value=ph_min,
+                max_value=ph_max,
+                value=float(base_values[4]),
+            )
+            temp_min = min(-5.0, float(base_values[6]))
+            temp_max = max(40.0, float(base_values[6]))
+            temperatura = st.number_input(
+                "Temperature (°C)",
+                min_value=temp_min,
+                max_value=temp_max,
+                value=float(base_values[6]),
+            )
+
+        with col3:
+            dif_gs = st.number_input("Dif_GS", value=float(base_values[2]))
+            min_fora_min = min(0.0, float(base_values[7]))
+            min_fora = st.number_input("Minutes out of spec", min_value=min_fora_min, value=float(base_values[7]))
+            tempo_fora_espec = st.selectbox(
+                "Time out of spec",
+                [0, 1],
+                index=int(round(base_values[8])),
+                format_func=lambda x: "In" if x == 0 else "Out",
+            )
+
+        submitted = st.form_submit_button("Run what-if")
+
+    if submitted:
+        sim_values = [
+            dif_es,
+            dif_hfd,
+            dif_gs,
+            ph_entrada,
+            ph_salga,
+            densidade,
+            temperatura,
+            min_fora,
+            tempo_fora_espec,
+        ]
+
+        sim_X = transform_features(imputer, pd.DataFrame([sim_values], columns=NUM_COLS))
+        sim_pred = model.predict(sim_X)[0]
+        impacto = sim_pred - base_pred
+
+        st.markdown("---")
+        st.write(f"**Simulated predicted deviation:** {sim_pred:.3f}")
+        st.write(f"**Impact vs baseline:** {impacto:+.3f}")
+
+        changes = []
+        for name, base_val, new_val in zip(NUM_COLS, base_values, sim_values):
+            if abs(float(new_val) - float(base_val)) > 1e-9:
+                changes.append({
+                    "variable": name,
+                    "base": float(base_val),
+                    "new": float(new_val),
+                    "delta": float(new_val) - float(base_val),
+                })
+
+        if changes:
+            st.markdown("**Changed variables**")
+            st.dataframe(pd.DataFrame(changes), use_container_width=True)
+        else:
+            st.info("No changes from base values.")

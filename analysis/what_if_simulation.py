@@ -2,6 +2,8 @@ import pandas as pd
 
 from ml.ml_utils import load_data, build_features, get_model, transform_features
 
+ERROR_EPS = 0.01
+
 # =========================
 # Read data
 # =========================
@@ -35,6 +37,9 @@ desvio_base = model.predict(pd.DataFrame([x_base]))[0]
 print("\n📌 BASE CASE")
 print(f"REAL deviation   : {desvio_real:.3f}")
 print(f"PREDICTED deviation: {desvio_base:.3f}")
+err_abs = abs(desvio_real - desvio_base)
+err_pct = err_abs / max(abs(desvio_real), ERROR_EPS) * 100
+print(f"Unexplained % (obs vs baseline): {err_pct:.1f}% (eps=0.01)")
 
 # =========================
 # Interactive loop

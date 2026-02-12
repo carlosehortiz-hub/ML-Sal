@@ -156,6 +156,7 @@ streamlit run app.py
 This interface supports:
 	•	Selecting an existing record
 	•	Manual input (no DB write)
+	•	What-if simulation on a base record
 	•	Local SHAP explanation with the same validations
 
 ⸻
