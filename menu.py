@@ -11,12 +11,17 @@ MENU = {
     "7": ("Manual insert", "utilities/insert_deviation_manual.py"),
     "8": ("Verify inserts", "database/verify_inserts.py"),
     "9": ("Delete last record", "database/delete_last_record.py"),
+    "10": ("Web interface (Streamlit)", "__STREAMLIT__"),
     "0": ("Exit", None),
 }
 
 
 def run_script(script_name):
     subprocess.run([sys.executable, script_name], check=False)
+
+
+def run_streamlit():
+    subprocess.run([sys.executable, "-m", "streamlit", "run", "app.py"], check=False)
 
 
 def main():
@@ -37,7 +42,10 @@ def main():
             return
 
         print(f"\n▶️ Running: {label}")
-        run_script(script)
+        if script == "__STREAMLIT__":
+            run_streamlit()
+        else:
+            run_script(script)
 
 
 if __name__ == "__main__":

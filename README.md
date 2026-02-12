@@ -57,6 +57,7 @@ Results are presented in a way that is:
 ML-Sal/
 ├── .gitignore
 ├── README.md
+├── app.py
 ├── menu.py
 ├── subir_github.sh
 ├── subir_github_branch.sh
@@ -99,6 +100,7 @@ ML-Sal/
 	•	scikit-learn
 	•	SHAP
 	•	matplotlib
+	•	Streamlit (web UI)
 
 ⸻
 
@@ -143,6 +145,18 @@ The user:
 python analysis/what_if_simulation.py
 
 Allows testing hypothetical scenarios without saving data.
+
+⸻
+
+5️⃣ Web interface (optional)
+
+pip install streamlit
+streamlit run app.py
+
+This interface supports:
+	•	Selecting an existing record
+	•	Manual input (no DB write)
+	•	Local SHAP explanation with the same validations
 
 ⸻
 
