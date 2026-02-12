@@ -1,24 +1,24 @@
 import sqlite3
 import pandas as pd
 
-# ligar à base
+# Connect to database
 conn = sqlite3.connect("ml_sal.db")
 
-# ler tabela
+# Read table
 df = pd.read_sql("SELECT * FROM desvios_sal", conn)
 conn.close()
 
-print("📊 Dimensão do dataset:")
+print("📊 Dataset size:")
 print(df.shape)
 
-print("\n📋 Primeiras linhas:")
+print("\n📋 First rows:")
 print(df.head())
 
-print("\n🔎 Tipos de dados:")
+print("\n🔎 Data types:")
 print(df.dtypes)
 
-print("\n🎯 Estatísticas do target (dif_pct_sal):")
+print("\n🎯 Target statistics (dif_pct_sal):")
 print(df["dif_pct_sal"].describe())
 
-print("\n❓ Valores em falta:")
+print("\n❓ Missing values:")
 print(df.isna().sum())

@@ -8,7 +8,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestRegressor
 
 # ======================================================
-# 1. Ler dados
+# 1. Read data
 # ======================================================
 conn = sqlite3.connect("ml_sal.db")
 df = pd.read_sql("SELECT * FROM desvios_sal", conn)
@@ -16,42 +16,42 @@ conn.close()
 
 df = df.dropna(subset=["dif_pct_sal"]).reset_index(drop=True)
 
-print(f"\n📊 Total de casos disponíveis: {len(df)}")
+print(f"\n📊 Total available cases: {len(df)}")
 
 # ======================================================
-# 2. Escolher LOTE
+# 2. Choose BATCH
 # ======================================================
-lote = input("\n🔎 Introduz o LOTE a analisar: ").strip()
+lote = input("\n🔎 Enter the BATCH to analyze: ").strip()
 df_lote = df[df["lote"] == lote].reset_index(drop=True)
 
 if df_lote.empty:
-    print(f"\n❌ Nenhum registo encontrado para o lote '{lote}'")
-    print("✅ Análise terminada.")
+    print(f"\n❌ No records found for batch '{lote}'")
+    print("✅ Analysis finished.")
     exit()
 
 # ======================================================
-# 3. Escolher registo do lote
+# 3. Choose batch record
 # ======================================================
 if len(df_lote) == 1:
     linha = df_lote.iloc[0]
 else:
-    print(f"\n⚠️ Foram encontrados {len(df_lote)} registos para o lote {lote}:\n")
+    print(f"\n⚠️ Found {len(df_lote)} records for batch {lote}:\n")
     for i, r in df_lote.iterrows():
         print(
-            f"[{i}] Data: {r['data']} | "
-            f"Cuba: {r['cuba']} | "
-            f"dif % sal: {r['dif_pct_sal']:.3f}"
+            f"[{i}] Date: {r['data']} | "
+            f"Tank: {r['cuba']} | "
+            f"salt % diff: {r['dif_pct_sal']:.3f}"
         )
 
     while True:
-        escolha = input("\nEscolhe o número do registo: ").strip()
+        escolha = input("\nChoose the record number: ").strip()
         if escolha.isdigit() and int(escolha) in range(len(df_lote)):
             linha = df_lote.iloc[int(escolha)]
             break
-        print("❌ Escolha inválida.")
+        print("❌ Invalid choice.")
 
 # ======================================================
-# 4. Extrair variáveis chave
+# 4. Extract key variables
 # ======================================================
 dif_sal = linha["dif_pct_sal"]
 dif_es = linha["dif_es"]
@@ -62,7 +62,7 @@ cuba = linha["cuba"]
 data = linha["data"]
 
 # ======================================================
-# 5. Preparar dados para ML
+# 5. Prepare data for ML
 # ======================================================
 y = df["dif_pct_sal"]
 
@@ -94,7 +94,7 @@ X_num = pd.DataFrame(
     columns=num_cols
 )
 
-# índice global da linha escolhida
+# Global index of the selected row
 row_idx = df.index[
     (df["lote"] == linha["lote"]) &
     (df["data"] == linha["data"]) &
@@ -102,7 +102,7 @@ row_idx = df.index[
 ][0]
 
 # ======================================================
-# 6. Modelo
+# 6. Model
 # ======================================================
 model = RandomForestRegressor(
     n_estimators=300,
@@ -112,7 +112,7 @@ model = RandomForestRegressor(
 model.fit(X_num, y)
 
 # ======================================================
-# 7. SHAP LOCAL
+# 7. LOCAL SHAP
 # ======================================================
 explainer = shap.TreeExplainer(model)
 shap_values = explainer(X_num)
@@ -134,7 +134,7 @@ impact_df = impact_df[impact_df["percent"] >= 1]
 impact_df = impact_df.sort_values("percent", ascending=False)
 
 # ======================================================
-# 8. VERIFICAR DOMINÂNCIA DE ES / HFD
+# 8. CHECK ES / HFD DOMINANCE
 # ======================================================
 dominante = impact_df.iloc[0]
 var_dom = dominante["variavel"]
@@ -145,96 +145,104 @@ inconclusivo = False
 motivos = []
 
 if aplicar_validacao:
-    # ES dominante → relação inversa
+    # ES dominant → inverse relationship
     if var_dom == "dif_es":
         if (dif_sal > 0 and dif_es > 0) or (dif_sal < 0 and dif_es < 0):
             inconclusivo = True
             motivos.append(
-                "ES é variável dominante mas o sinal do desvio\n"
-                "contraria a relação inversa esperada."
+                "ES is the dominant variable, but the deviation sign\n"
+                "contradicts the expected inverse relationship."
             )
 
-    # HFD dominante → relação direta
+    # HFD dominant → direct relationship
     if var_dom == "dif_hfd":
         if (dif_sal > 0 and dif_hfd < 0) or (dif_sal < 0 and dif_hfd > 0):
             inconclusivo = True
             motivos.append(
-                "HFD é variável dominante mas o sinal do desvio\n"
-                "contraria a relação direta esperada."
+                "HFD is the dominant variable, but the deviation sign\n"
+                "contradicts the expected direct relationship."
             )
 
 # ======================================================
 # 9. OUTPUT
 # ======================================================
 if inconclusivo:
-    print("\n📘 ANÁLISE INCONCLUSIVA")
+    print("\n📘 INCONCLUSIVE ANALYSIS")
     print("=" * 75)
-    print(f"Lote: {lote} | Cuba: {cuba} | Data: {data}")
-    print(f"Desvio observado (dif % sal): {dif_sal:.3f}\n")
+    print(f"Batch: {lote} | Tank: {cuba} | Date: {data}")
+    print(f"Observed deviation (salt % diff): {dif_sal:.3f}\n")
 
     for m in motivos:
         print(f"- {m}")
 
-    print("\nConclusão:")
-    print("A variável dominante viola pressupostos físicos do processo.")
-    print("Este caso não deve ser interpretado via ML.")
-    print("\n❌ Nenhum gráfico foi gerado.")
-    print("✅ Análise terminada.")
+    print("\nConclusion:")
+    print("The dominant variable violates physical process assumptions.")
+    print("This case should not be interpreted via ML.")
+    print("\n❌ No chart was generated.")
+    print("✅ Analysis finished.")
     exit()
 
 # ======================================================
-# 10. Gráfico SHAP
+# 10. SHAP Chart
 # ======================================================
 # ======================================================
-# 10. Gráfico SHAP (COM valor medido + regra dos 15%)
+# 10. SHAP Chart (WITH measured value + 15% rule)
 # ======================================================
 # ======================================================
-# 10. Gráfico SHAP — impacto DIRECIONAL (versão final)
+# 10. SHAP Chart — DIRECTIONAL impact (final version)
 # ======================================================
 # ======================================================
-# 10. Gráfico SHAP — impacto DIRECIONAL (legendas sempre visíveis)
+# 10. SHAP Chart — DIRECTIONAL impact (labels always visible)
 # ======================================================
 # ======================================================
-# Gráfico SHAP — impacto DIRECIONAL (regra 15% + eixo 0)
+# SHAP Chart — DIRECTIONAL impact (15% rule + zero axis)
 # ======================================================
 
-# Ordenar por impacto absoluto
-impact_df["impacto_abs"] = impact_df["impacto"].abs()
-impact_df = impact_df.sort_values("impacto_abs")
+# Remove ph_entrada from the chart when the record value is 0 (OK)
+impact_df_plot = impact_df.copy()
+if linha.get("ph_entrada") == 0:
+    impact_df_plot = impact_df_plot[impact_df_plot["variavel"] != "ph_entrada"].copy()
+    if not impact_df_plot.empty:
+        total_plot = impact_df_plot["impacto"].abs().sum()
+        impact_df_plot["percent"] = impact_df_plot["impacto"].abs() / total_plot * 100
 
-# Labels do eixo Y com valor medido
-impact_df["label_y"] = impact_df.apply(
-    lambda r: f"{r['variavel']}\nvalor = {r['valor_medido']:.3g}",
+# Sort by absolute impact
+impact_df_plot["impacto_abs"] = impact_df_plot["impacto"].abs()
+impact_df_plot = impact_df_plot.sort_values("impacto_abs")
+
+# Y-axis labels with measured value
+impact_df_plot["label_y"] = impact_df_plot.apply(
+    lambda r: f"{r['variavel']}\nvalue = {r['valor_medido']:.3g}",
     axis=1
 )
 
 plt.figure(figsize=(10, 6))
 
-# Cores por direção do impacto
-colors = impact_df["impacto"].apply(
+# Colors by impact direction
+colors = impact_df_plot["impacto"].apply(
     lambda x: "#d62728" if x > 0 else "#2ca02c"
 )
 
 bars = plt.barh(
-    impact_df["label_y"],
-    impact_df["impacto"],
+    impact_df_plot["label_y"],
+    impact_df_plot["impacto"],
     color=colors
 )
 
-# Eixo central
+# Central axis
 plt.axvline(0, color="black", linewidth=0.8)
 
-# Anotações
+# Annotations
 for bar, impacto, perc in zip(
     bars,
-    impact_df["impacto"],
-    impact_df["percent"]
+    impact_df_plot["impacto"],
+    impact_df_plot["percent"]
 ):
     y = bar.get_y() + bar.get_height() / 2
     label = f"{impacto:+.3f} ({perc:.1f}%)"
 
     # =========================
-    # ≥ 15% → dentro da barra
+    # ≥ 15% → inside the bar
     # =========================
     if perc >= 15:
         plt.text(
@@ -248,7 +256,7 @@ for bar, impacto, perc in zip(
         )
 
     # =========================
-    # < 15% → junto ao eixo 0, lado oposto
+    # < 15% → near the zero axis, opposite side
     # =========================
     else:
         offset = 0.002
@@ -264,10 +272,10 @@ for bar, impacto, perc in zip(
             color="black"
         )
 
-plt.xlabel("Impacto local no desvio previsto (% sal)")
+plt.xlabel("Local impact on predicted deviation (salt %)")
 plt.title(
-    f"Análise local do desvio de sal\n"
-    f"Lote: {lote} | Cuba: {cuba} | dif % sal: {dif_sal:.3f}",
+    f"Local analysis of salt deviation\n"
+    f"Batch: {lote} | Tank: {cuba} | salt % diff: {dif_sal:.3f}",
     fontsize=11
 )
 
@@ -275,13 +283,13 @@ plt.tight_layout()
 plt.savefig("shap_local.png", dpi=150)
 plt.close()
 # ======================================================
-# 11. Interpretação final
+# 11. Final interpretation
 # ======================================================
-print("\n📘 INTERPRETAÇÃO DO RESULTADO")
+print("\n📘 RESULT INTERPRETATION")
 print("=" * 75)
-print("A análise foi considerada COERENTE.")
-print("A variável dominante respeita os pressupostos")
-print("físicos do processo, permitindo interpretação.")
+print("The analysis was considered COHERENT.")
+print("The dominant variable respects the")
+print("physical process assumptions, allowing interpretation.")
 
-print("\n📄 Ficheiro gerado: shap_local.png")
-print("✅ Análise concluída")
+print("\n📄 File generated: shap_local.png")
+print("✅ Analysis completed")

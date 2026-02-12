@@ -7,7 +7,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestRegressor
 
 # =========================
-# Ler dados
+# Read data
 # =========================
 conn = sqlite3.connect("ml_sal.db")
 df = pd.read_sql("SELECT * FROM desvios_sal", conn)
@@ -21,7 +21,7 @@ df = df.dropna(subset=["dif_pct_sal"])
 y = df["dif_pct_sal"]
 
 # =========================
-# Features (sem referencia)
+# Features (without reference)
 # =========================
 X = df.drop(columns=[
     "id",
@@ -46,7 +46,7 @@ num_cols = [
 ]
 
 # =========================
-# Imputação
+# Imputation
 # =========================
 imputer = SimpleImputer(strategy="median")
 X_final = pd.DataFrame(
@@ -55,7 +55,7 @@ X_final = pd.DataFrame(
 )
 
 # =========================
-# Modelo
+# Model
 # =========================
 model = RandomForestRegressor(
     n_estimators=300,
@@ -88,4 +88,4 @@ plt.tight_layout()
 plt.savefig("shap_global.png", dpi=150)
 plt.close()
 
-print("✅ SHAP global (sem referencia) guardado em shap_global.png")
+print("✅ Global SHAP (without reference) saved to shap_global.png")

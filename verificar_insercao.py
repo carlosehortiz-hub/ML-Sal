@@ -2,12 +2,12 @@ import sqlite3
 import pandas as pd
 
 # ======================================================
-# Ligar à base de dados
+# Connect to the database
 # ======================================================
 conn = sqlite3.connect("ml_sal.db")
 
 # ======================================================
-# Ler os últimos registos inseridos
+# Read the latest inserted records
 # ======================================================
 query = """
 SELECT *
@@ -20,11 +20,11 @@ df = pd.read_sql(query, conn)
 conn.close()
 
 # ======================================================
-# Mostrar resultado
+# Show result
 # ======================================================
 if df.empty:
-    print("❌ A tabela está vazia. Nenhum registo encontrado.")
+    print("❌ The table is empty. No records found.")
 else:
-    print("\n✅ Últimos registos inseridos na base de dados:")
+    print("\n✅ Latest records inserted into the database:")
     print("=" * 60)
     print(df)

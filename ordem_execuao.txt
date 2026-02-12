@@ -1,51 +1,49 @@
-✅ ORDEM DE EXECUÇÃO DO PROJETO ML-Sal
+✅ EXECUTION ORDER FOR THE ML-Sal PROJECT
 
-Passo 0 — (opcional, só para confirmar)
+Step 0 — (optional, just to confirm)
 
 verificar_base.py
-→ confirma que a base de dados e a tabela existem
+→ confirms that the database and table exist
 
 ⸻
 
-Passo 1 — Preparar os dados
+Step 1 — Prepare the data
 
 preparar_dados_ml.py
-→ limpa dados, faz imputação e cria o dataset final para ML
+→ cleans data, imputes, and creates the final ML dataset
 
 ⸻
 
-Passo 2 — Treinar o modelo
+Step 2 — Train the model
 
 treinar_modelo_baseline.py
-→ treina o Random Forest e avalia desempenho (R², RMSE)
+→ trains the Random Forest and evaluates performance (R², RMSE)
 
 ⸻
 
-Passo 3 — Explicação global
+Step 3 — Global explanation
 
 explicacao_global.py
-→ gera o gráfico SHAP global (shap_global.png)
+→ generates the global SHAP chart (shap_global.png)
 
 ⸻
 
-Passo 4 — Explicação local (caso específico)
+Step 4 — Local explanation (specific case)
 
 explicacao_local.py
-→ gera o SHAP local (shap_local.png) para um row_id
+→ generates the local SHAP (shap_local.png) for a row_id
 
 ⸻
 
-Passo 5 — Simulações what-if
+Step 5 — What-if simulations
 
 simulacao_what_if.py
-→ simula alterações de variáveis e observa impacto no desvio previsto
+→ simulates variable changes and observes the impact on predicted deviation
 
 ⸻
 
-🧠 Regra de ouro
+Whenever you add a new deviation to the database:
 
-Sempre que adicionares um novo desvio à base de dados:
-
-👉 recomeça no Passo 1 e segue até onde precisares.
+👉 restart at Step 1 and proceed as needed.
 
 ⸻

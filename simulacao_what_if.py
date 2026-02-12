@@ -4,7 +4,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestRegressor
 
 # =========================
-# Ler dados
+# Read data
 # =========================
 conn = sqlite3.connect("ml_sal.db")
 df = pd.read_sql("SELECT * FROM desvios_sal", conn)
@@ -12,11 +12,11 @@ conn.close()
 
 df = df.dropna(subset=["dif_pct_sal"]).reset_index(drop=True)
 
-print(f"\n📊 Total de casos disponíveis: {len(df)}")
-row_id = int(input("Escolhe o row_id do caso base: "))
+print(f"\n📊 Total available cases: {len(df)}")
+row_id = int(input("Choose the row_id for the base case: "))
 
 if row_id < 0 or row_id >= len(df):
-    raise ValueError("row_id inválido")
+    raise ValueError("Invalid row_id")
 
 desvio_real = df.iloc[row_id]["dif_pct_sal"]
 
@@ -26,7 +26,7 @@ desvio_real = df.iloc[row_id]["dif_pct_sal"]
 y = df["dif_pct_sal"]
 
 # =========================
-# Features (sem referencia)
+# Features (without reference)
 # =========================
 X = df.drop(columns=[
     "id",
@@ -51,7 +51,7 @@ num_cols = [
 ]
 
 # =========================
-# Imputação
+# Imputation
 # =========================
 imputer = SimpleImputer(strategy="median")
 X_final = pd.DataFrame(
@@ -60,7 +60,7 @@ X_final = pd.DataFrame(
 )
 
 # =========================
-# Modelo
+# Model
 # =========================
 model = RandomForestRegressor(
     n_estimators=300,
@@ -71,17 +71,17 @@ model = RandomForestRegressor(
 model.fit(X_final, y)
 
 # =========================
-# Caso base
+# Base case
 # =========================
 x_base = X_final.iloc[row_id].copy()
 desvio_base = model.predict(pd.DataFrame([x_base]))[0]
 
-print("\n📌 CASO BASE")
-print(f"Desvio REAL      : {desvio_real:.3f}")
-print(f"Desvio PREVISTO  : {desvio_base:.3f}")
+print("\n📌 BASE CASE")
+print(f"REAL deviation   : {desvio_real:.3f}")
+print(f"PREDICTED deviation: {desvio_base:.3f}")
 
 # =========================
-# Loop interativo
+# Interactive loop
 # =========================
 variaveis = list(x_base.index)
 
@@ -89,35 +89,35 @@ while True:
     x_sim = x_base.copy()
     alteracoes = {}
 
-    print("\nVariáveis disponíveis:")
+    print("\nAvailable variables:")
     for v in variaveis:
         print(f" - {v}")
 
     while True:
-        var = input("\nVariável a simular (ou 'fim'): ").strip()
-        if var.lower() == "fim":
+        var = input("\nVariable to simulate (or 'end'): ").strip()
+        if var.lower() == "end":
             break
         if var not in x_sim.index:
-            print("❌ Variável inválida")
+            print("❌ Invalid variable")
             continue
 
         atual = x_sim[var]
-        novo = float(input("Novo valor: "))
+        novo = float(input("New value: "))
         x_sim[var] = novo
         alteracoes[var] = (atual, novo)
 
-        if input("Alterar mais variáveis? (s/n): ").lower() != "s":
+        if input("Change more variables? (y/n): ").lower() != "y":
             break
 
     if alteracoes:
         desvio_sim = model.predict(pd.DataFrame([x_sim]))[0]
         impacto = desvio_sim - desvio_base
 
-        print("\n📊 RESULTADO")
+        print("\n📊 RESULT")
         for v, (a, n) in alteracoes.items():
             print(f"{v}: {a} → {n}")
-        print(f"Desvio previsto: {desvio_sim:.3f}")
-        print(f"Impacto vs base: {impacto:+.3f}")
+        print(f"Predicted deviation: {desvio_sim:.3f}")
+        print(f"Impact vs base: {impacto:+.3f}")
 
-    if input("\nNova simulação? (s/n): ").lower() != "s":
+    if input("\nNew simulation? (y/n): ").lower() != "y":
         break

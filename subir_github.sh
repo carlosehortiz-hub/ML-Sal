@@ -1,27 +1,27 @@
 #!/bin/bash
 
-echo "🔍 Verificar estado do repositório..."
+echo "🔍 Checking repository status..."
 git status
 
 echo ""
-read -p "➡️ Mensagem do commit: " mensagem
+read -p "➡️ Commit message: " mensagem
 
 if [ -z "$mensagem" ]; then
-  echo "❌ Commit cancelado: mensagem vazia."
+  echo "❌ Commit canceled: empty message."
   exit 1
 fi
 
 echo ""
-echo "➕ A adicionar ficheiros..."
+echo "➕ Adding files..."
 git add .
 
 echo ""
-echo "📝 A criar commit..."
+echo "📝 Creating commit..."
 git commit -m "$mensagem"
 
 echo ""
-echo "🚀 A enviar para o GitHub..."
+echo "🚀 Pushing to GitHub..."
 git push
 
 echo ""
-echo "✅ Submissão concluída com sucesso!"
+echo "✅ Push completed successfully!"

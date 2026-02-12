@@ -2,7 +2,7 @@ import pandas as pd
 import sqlite3
 
 # =========================
-# 1. Ler CSV
+# 1. Read CSV
 # =========================
 df = pd.read_csv(
     "matriz_cloretos.csv",
@@ -11,7 +11,7 @@ df = pd.read_csv(
 )
 
 # =========================
-# 2. Normalizar nomes de colunas
+# 2. Normalize column names
 # =========================
 df.columns = (
     df.columns
@@ -21,11 +21,11 @@ df.columns = (
     .str.lower()
 )
 
-# remover BOM escondido na coluna data
+# Remove hidden BOM in the date column
 df = df.rename(columns={'\ufeffdata': 'data'})
 
 # =========================
-# 3. Limpar erros típicos do Excel
+# 3. Clean typical Excel errors
 # =========================
 df = df.replace(
     ['#VALUE!', '#DIV/0!', '#N/A', 'N/A', ''],
@@ -33,7 +33,7 @@ df = df.replace(
 )
 
 # =========================
-# 4. Converter datas
+# 4. Convert dates
 # =========================
 df['data'] = pd.to_datetime(
     df['data'],
@@ -42,7 +42,7 @@ df['data'] = pd.to_datetime(
 )
 
 # =========================
-# 5. Converter percentagens para float
+# 5. Convert percentages to float
 # =========================
 percent_cols = [
     'pct_sal',
@@ -62,7 +62,7 @@ for col in percent_cols:
     df[col] = pd.to_numeric(df[col], errors='coerce')
 
 # =========================
-# 6. Tratar pH entrada (estado OK / NOK)
+# 6. Handle pH input (OK / NOK status)
 # =========================
 df['ph_entrada_salga'] = (
     df['ph_entrada_salga']
@@ -72,7 +72,7 @@ df['ph_entrada_salga'] = (
 )
 
 # =========================
-# 7. Converter restantes colunas numéricas
+# 7. Convert remaining numeric columns
 # =========================
 num_cols = [
     'ph_salga',
@@ -91,13 +91,13 @@ for col in num_cols:
     df[col] = pd.to_numeric(df[col], errors='coerce')
 
 # =========================
-# 8. Ligar à base de dados SQLite
+# 8. Connect to SQLite database
 # =========================
 conn = sqlite3.connect("ml_sal.db")
 cursor = conn.cursor()
 
 # =========================
-# 9. Criar tabela (se não existir)
+# 9. Create table (if it does not exist)
 # =========================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS desvios_sal (
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS desvios_sal (
 conn.commit()
 
 # =========================
-# 10. Ajustar nomes finais para a BD
+# 10. Adjust final names for the DB
 # =========================
 df_final = df.rename(columns={
     'ph_entrada_salga': 'ph_entrada',
@@ -132,7 +132,7 @@ df_final = df.rename(columns={
 })
 
 # =========================
-# 11. Inserir dados na base
+# 11. Insert data into the database
 # =========================
 df_final.to_sql(
     'desvios_sal',
@@ -144,10 +144,10 @@ df_final.to_sql(
 conn.close()
 
 # =========================
-# 12. Mensagens finais
+# 12. Final messages
 # =========================
-print("✅ Histórico importado com sucesso!")
-print(f"📊 Total de linhas importadas: {len(df_final)}")
+print("✅ History imported successfully!")
+print(f"📊 Total rows imported: {len(df_final)}")
 
-print("\n🔎 Valores em falta por coluna:")
+print("\n🔎 Missing values by column:")
 print(df_final.isna().sum())

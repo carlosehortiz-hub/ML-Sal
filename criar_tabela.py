@@ -27,4 +27,4 @@ CREATE TABLE IF NOT EXISTS desvios_sal (
 conn.commit()
 conn.close()
 
-print("Tabela 'desvios_sal' criada com sucesso.")
+print("Table 'desvios_sal' created successfully.")

@@ -3,25 +3,25 @@ from datetime import datetime
 import sys
 
 # ======================================================
-# FUNÇÕES DE INPUT TOTALMENTE SEGURAS
+# FULLY SAFE INPUT FUNCTIONS
 # ======================================================
 
 def input_float(mensagem, exemplo=None, minimo=None, maximo=None):
     while True:
         texto = mensagem
         if exemplo:
-            texto += f" (ex: {exemplo})"
-        texto += " → usa ponto ou vírgula: "
+            texto += f" (e.g.: {exemplo})"
+        texto += " → use dot or comma: "
 
         valor_str = input(texto)
 
         if valor_str is None:
-            print("\n❌ Entrada vazia.\n")
+            print("\n❌ Empty input.\n")
             continue
 
         valor_str = valor_str.strip()
         if valor_str == "":
-            print("\n❌ Valor não pode estar vazio.\n")
+            print("\n❌ Value cannot be empty.\n")
             continue
 
         valor_str = valor_str.replace(",", ".")
@@ -30,18 +30,18 @@ def input_float(mensagem, exemplo=None, minimo=None, maximo=None):
             valor = float(valor_str)
         except Exception:
             print(
-                "\n❌ Valor inválido."
-                "\n➡️ Introduz apenas números."
-                "\n➡️ Exemplos válidos: 1.60 | 1,60 | -0.045\n"
+                "\n❌ Invalid value."
+                "\n➡️ Enter numbers only."
+                "\n➡️ Valid examples: 1.60 | 1,60 | -0.045\n"
             )
             continue
 
         if minimo is not None and valor < minimo:
-            print(f"\n❌ Valor inválido. Deve ser ≥ {minimo}.\n")
+            print(f"\n❌ Invalid value. Must be ≥ {minimo}.\n")
             continue
 
         if maximo is not None and valor > maximo:
-            print(f"\n❌ Valor inválido. Deve ser ≤ {maximo}.\n")
+            print(f"\n❌ Invalid value. Must be ≤ {maximo}.\n")
             continue
 
         return valor
@@ -51,35 +51,35 @@ def input_int(mensagem, exemplo=None, minimo=None, maximo=None):
     while True:
         texto = mensagem
         if exemplo:
-            texto += f" (ex: {exemplo})"
+            texto += f" (e.g.: {exemplo})"
         texto += ": "
 
         valor_str = input(texto)
 
         if valor_str is None:
-            print("\n❌ Entrada vazia.\n")
+            print("\n❌ Empty input.\n")
             continue
 
         valor_str = valor_str.strip()
         if valor_str == "":
-            print("\n❌ Valor não pode estar vazio.\n")
+            print("\n❌ Value cannot be empty.\n")
             continue
 
         try:
             valor = int(valor_str)
         except Exception:
             print(
-                "\n❌ Valor inválido."
-                "\n➡️ Introduz apenas um número inteiro.\n"
+                "\n❌ Invalid value."
+                "\n➡️ Enter an integer only.\n"
             )
             continue
 
         if minimo is not None and valor < minimo:
-            print(f"\n❌ Valor inválido. Deve ser ≥ {minimo}.\n")
+            print(f"\n❌ Invalid value. Must be ≥ {minimo}.\n")
             continue
 
         if maximo is not None and valor > maximo:
-            print(f"\n❌ Valor inválido. Deve ser ≤ {maximo}.\n")
+            print(f"\n❌ Invalid value. Must be ≤ {maximo}.\n")
             continue
 
         return valor
@@ -87,10 +87,10 @@ def input_int(mensagem, exemplo=None, minimo=None, maximo=None):
 
 def input_data():
     while True:
-        data = input("Data (YYYY-MM-DD) [Enter = hoje]: ")
+        data = input("Date (YYYY-MM-DD) [Enter = today]: ")
 
         if data is None:
-            print("\n❌ Entrada inválida.\n")
+            print("\n❌ Invalid input.\n")
             continue
 
         data = data.strip()
@@ -103,8 +103,8 @@ def input_data():
             return data
         except Exception:
             print(
-                "\n❌ Data inválida."
-                "\n➡️ Usa o formato YYYY-MM-DD.\n"
+                "\n❌ Invalid date."
+                "\n➡️ Use YYYY-MM-DD format.\n"
             )
 
 
@@ -116,7 +116,7 @@ def input_choice(mensagem, opcoes, descricao=None):
         valor = input(f"{mensagem} {opcoes}: ")
 
         if valor is None:
-            print("\n❌ Entrada inválida.\n")
+            print("\n❌ Invalid input.\n")
             continue
 
         valor = valor.strip()
@@ -125,8 +125,8 @@ def input_choice(mensagem, opcoes, descricao=None):
             return int(valor)
 
         print(
-            f"\n❌ Valor inválido."
-            f"\n➡️ Escolhe uma das opções {opcoes}.\n"
+            f"\n❌ Invalid value."
+            f"\n➡️ Choose one of the options {opcoes}.\n"
         )
 
 
@@ -137,77 +137,77 @@ def input_referencia(cursor):
     refs = [r[0] for r in cursor.fetchall()]
 
     if not refs:
-        print("\n❌ Não existem referências na base de dados.")
+        print("\n❌ There are no references in the database.")
         sys.exit(1)
 
-    print("\n📚 Referências válidas:")
+    print("\n📚 Valid references:")
     for r in refs:
         print(f" - {r}")
 
     while True:
-        ref = input("\nReferência (copiar exatamente da lista): ")
+        ref = input("\nReference (copy exactly from the list): ")
 
         if ref is None:
-            print("\n❌ Entrada inválida.\n")
+            print("\n❌ Invalid input.\n")
             continue
 
         ref = ref.strip()
 
         if ref == "":
-            print("\n❌ Referência não pode estar vazia.\n")
+            print("\n❌ Reference cannot be empty.\n")
             continue
 
         if ref in refs:
             return ref
 
         print(
-            "\n❌ Referência inválida."
-            "\n➡️ Deve coincidir exatamente com uma das referências listadas."
-            "\n➡️ Atenção a espaços, maiúsculas e acentos.\n"
+            "\n❌ Invalid reference."
+            "\n➡️ It must match exactly one of the listed references."
+            "\n➡️ Watch out for spaces, uppercase letters, and accents.\n"
         )
 
 
 # ======================================================
-# LIGAÇÃO À BASE DE DADOS
+# DATABASE CONNECTION
 # ======================================================
 
 conn = sqlite3.connect("ml_sal.db")
 cursor = conn.cursor()
 
-print("\n📥 INSERÇÃO MANUAL DE NOVO DESVIO")
+print("\n📥 MANUAL INSERT OF NEW DEVIATION")
 print("=" * 60)
 
 # ======================================================
-# DADOS GERAIS
+# GENERAL DATA
 # ======================================================
 
 data = input_data()
 referencia = input_referencia(cursor)
 
 cuba = input_int(
-    "Cuba (inteiro)",
+    "Tank (integer)",
     exemplo="12",
     minimo=1
 )
 
 lote = ""
 while lote == "":
-    lote = input("Lote (texto livre): ")
+    lote = input("Batch (free text): ")
     if lote is None:
         lote = ""
     lote = lote.strip()
     if lote == "":
-        print("\n❌ Lote não pode estar vazio.\n")
+        print("\n❌ Batch cannot be empty.\n")
 
 # ======================================================
-# VARIÁVEIS PRINCIPAIS
+# MAIN VARIABLES
 # ======================================================
 
-pct_sal = input_float("% Sal medido", exemplo="1.60", minimo=0)
-dif_pct_sal = input_float("Diferença % sal (TARGET)", exemplo="-0.040")
+pct_sal = input_float("Measured salt %", exemplo="1.60", minimo=0)
+dif_pct_sal = input_float("Salt % difference (TARGET)", exemplo="-0.040")
 
 # ======================================================
-# VARIÁVEIS DE PROCESSO
+# PROCESS VARIABLES
 # ======================================================
 
 dif_es = input_float("Dif_ES", exemplo="0.90")
@@ -215,68 +215,68 @@ dif_hfd = input_float("Dif_HFD", exemplo="-1.10")
 dif_gs = input_float("Dif_GS", exemplo="0.20")
 
 ph_entrada = input_choice(
-    "pH entrada",
+    "Input pH",
     ["0", "1"],
-    descricao="0 = NOK | 1 = OK"
+    descricao="0 = OK | 1 = NOK"
 )
 
 ph_salga = input_float(
-    "pH salga",
+    "Brine pH",
     exemplo="5.05",
     minimo=3.5,
     maximo=7.5
 )
 
-densidade = input_float("Densidade", exemplo="18.8", minimo=0)
+densidade = input_float("Density", exemplo="18.8", minimo=0)
 temperatura = input_float(
-    "Temperatura (°C)",
+    "Temperature (°C)",
     exemplo="10.7",
     minimo=-5,
     maximo=40
 )
 
 min_fora = input_float(
-    "Minutos fora de especificação",
+    "Minutes out of spec",
     exemplo="25"
 )
 
 tempo_fora_espec = input_choice(
-    "Tempo fora de especificação",
+    "Time out of spec",
     ["0", "1"],
-    descricao="0 = Dentro | 1 = Fora"
+    descricao="0 = In | 1 = Out"
 )
 
 # ======================================================
-# CONFIRMAÇÃO FINAL
+# FINAL CONFIRMATION
 # ======================================================
 
-print("\n📋 RESUMO DOS DADOS")
+print("\n📋 DATA SUMMARY")
 print("-" * 60)
 
-print(f"Data               : {data}")
-print(f"Referência         : {referencia}")
-print(f"Cuba               : {cuba}")
-print(f"Lote               : {lote}")
-print(f"% Sal              : {pct_sal}")
-print(f"Dif % Sal (target) : {dif_pct_sal}")
+print(f"Date               : {data}")
+print(f"Reference          : {referencia}")
+print(f"Tank               : {cuba}")
+print(f"Batch              : {lote}")
+print(f"Salt %             : {pct_sal}")
+print(f"Salt % diff (target): {dif_pct_sal}")
 print(f"Dif_ES             : {dif_es}")
 print(f"Dif_HFD            : {dif_hfd}")
 print(f"Dif_GS             : {dif_gs}")
-print(f"pH entrada (0/1)   : {ph_entrada}")
-print(f"pH salga           : {ph_salga}")
-print(f"Densidade          : {densidade}")
-print(f"Temperatura        : {temperatura}")
-print(f"Min fora           : {min_fora}")
-print(f"Tempo fora espec   : {tempo_fora_espec}")
+print(f"Input pH (0/1)     : {ph_entrada}")
+print(f"Brine pH           : {ph_salga}")
+print(f"Density            : {densidade}")
+print(f"Temperature        : {temperatura}")
+print(f"Minutes out        : {min_fora}")
+print(f"Time out spec      : {tempo_fora_espec}")
 
-confirmar = input("\nConfirmar inserção? (s/n): ")
-if confirmar is None or confirmar.strip().lower() != "s":
-    print("\n❌ Inserção cancelada.")
+confirmar = input("\nConfirm insertion? (y/n): ")
+if confirmar is None or confirmar.strip().lower() != "y":
+    print("\n❌ Insertion canceled.")
     conn.close()
     sys.exit(0)
 
 # ======================================================
-# INSERÇÃO NA BASE DE DADOS
+# INSERT INTO DATABASE
 # ======================================================
 
 cursor.execute(
@@ -304,4 +304,4 @@ cursor.execute(
 conn.commit()
 conn.close()
 
-print("\n✅ Novo desvio inserido com sucesso!")
+print("\n✅ New deviation inserted successfully!")

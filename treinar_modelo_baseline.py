@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_squared_error
 
 # =========================
-# Ler dados
+# Read data
 # =========================
 conn = sqlite3.connect("ml_sal.db")
 df = pd.read_sql("SELECT * FROM desvios_sal", conn)
@@ -22,7 +22,7 @@ df = df.dropna(subset=["dif_pct_sal"])
 y = df["dif_pct_sal"]
 
 # =========================
-# Features (sem referencia)
+# Features (without reference)
 # =========================
 X = df.drop(columns=[
     "id",
@@ -35,7 +35,7 @@ X = df.drop(columns=[
 ])
 
 # =========================
-# Variáveis numéricas
+# Numeric variables
 # =========================
 num_cols = [
     "dif_es",
@@ -52,7 +52,7 @@ num_cols = [
 X_num = X[num_cols]
 
 # =========================
-# Imputação
+# Imputation
 # =========================
 imputer = SimpleImputer(strategy="median")
 X_final = pd.DataFrame(
@@ -71,7 +71,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # =========================
-# Modelo
+# Model
 # =========================
 model = RandomForestRegressor(
     n_estimators=300,
@@ -82,13 +82,13 @@ model = RandomForestRegressor(
 model.fit(X_train, y_train)
 
 # =========================
-# Avaliação
+# Evaluation
 # =========================
 y_pred = model.predict(X_test)
 
 r2 = r2_score(y_test, y_pred)
 rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-print("📈 Modelo explicativo (sem referencia)")
+print("📈 Explainable model (without reference)")
 print(f"R²   = {r2:.3f}")
 print(f"RMSE = {rmse:.4f}")

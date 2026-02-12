@@ -1,100 +1,100 @@
 ML-Sal
 
-Análise explicável de desvios de sal em processos industriais
+Explainable analysis of salt deviations in industrial processes
 
-📌 Objetivo do projeto
+📌 Project objective
 
-Este projeto tem como objetivo analisar e explicar desvios de sal (% sal) num processo industrial, utilizando Machine Learning explicável, sem alterar a base de dados e respeitando pressupostos físicos do processo.
+This project aims to analyze and explain salt deviations (salt %) in an industrial process using explainable Machine Learning, without changing the database and while respecting physical process assumptions.
 
-O sistema foi desenhado para responder à pergunta:
+The system was designed to answer the question:
 
-“Dado um desvio de sal observado, quais as variáveis medidas que mais contribuíram para esse desvio neste caso específico?”
-
-⸻
-
-🧠 Princípios fundamentais
-
-O projeto assenta em quatro princípios-chave:
-
-1️⃣ O processo vem antes do modelo
-
-Antes de qualquer análise de ML, o sistema valida se o sinal do desvio observado (dif_pct_sal) é fisicamente coerente com pressupostos conhecidos do processo (ex.: ES e HFD).
-
-Casos incoerentes são automaticamente classificados como INCONCLUSIVOS.
+“Given an observed salt deviation, which measured variables contributed most to that deviation in this specific case?”
 
 ⸻
 
-2️⃣ O modelo não altera dados
-	•	A base de dados nunca é modificada durante análises
-	•	O utilizador apenas consulta e simula
-	•	O sistema é seguro para partilha
+🧠 Core principles
+
+The project is based on four key principles:
+
+1️⃣ Process before model
+
+Before any ML analysis, the system validates whether the sign of the observed deviation (dif_pct_sal) is physically coherent with known process assumptions (e.g., ES and HFD).
+
+Incoherent cases are automatically classified as INCONCLUSIVE.
 
 ⸻
 
-3️⃣ Explicação local, não global
-
-O foco é sempre:
-	•	um lote
-	•	um registo específico
-	•	uma explicação local
-
-Não são feitas inferências globais ou generalizações automáticas.
+2️⃣ The model does not change data
+	•	The database is never modified during analyses
+	•	The user only consults and simulates
+	•	The system is safe to share
 
 ⸻
 
-4️⃣ Explicabilidade humana
+3️⃣ Local explanation, not global
 
-Os resultados são apresentados de forma:
+The focus is always:
+	•	a batch
+	•	a specific record
+	•	a local explanation
+
+No global inferences or automatic generalizations are made.
+
+⸻
+
+4️⃣ Human explainability
+
+Results are presented in a way that is:
 	•	visual
-	•	direcional (empurra vs compensa)
-	•	com valores reais do processo
-	•	compreensíveis para pessoas sem background em ML
+	•	directional (pushes vs compensates)
+	•	with real process values
+	•	understandable for people without an ML background
 
 ⸻
 
-🗂️ Estrutura do projeto
+🗂️ Project structure
 ML-Sal/
 │
 ├── .gitignore
 ├── README.md
 │
 ├── dados/
-│   ├── matriz_cloretos.csv        # Fonte histórica original (opcional)
-│   └── ml_sal.db                  # Base de dados SQLite (histórico consolidado)
+│   ├── matriz_cloretos.csv        # Original historical source (optional)
+│   └── ml_sal.db                  # SQLite database (consolidated history)
 │
 ├── base_dados/
-│   ├── criar_tabela.py            # Criação da tabela SQLite
-│   ├── importar_historico.py      # Importação inicial do histórico
-│   ├── verificar_base.py          # Verificação da integridade da base
-│   ├── verificar_insercao.py      # Confirmação de inserções
-│   └── apagar_ultimo_registo.py   # Remoção controlada do último registo
+│   ├── criar_tabela.py            # Create SQLite table
+│   ├── importar_historico.py      # Initial history import
+│   ├── verificar_base.py          # Database integrity check
+│   ├── verificar_insercao.py      # Insert confirmation
+│   └── apagar_ultimo_registo.py   # Controlled removal of the last record
 │
 ├── ml/
-│   ├── preparar_dados_ml.py       # Preparação dos dados para ML
-│   └── treinar_modelo_baseline.py # Treino do modelo base
+│   ├── preparar_dados_ml.py       # Prepare data for ML
+│   └── treinar_modelo_baseline.py # Train baseline model
 │
 ├── analise/
-│   ├── explicacao_local.py        # ⭐ Análise local explicável (principal)
-│   ├── explicacao_global.py       # Análise global (exploratória)
-│   └── simulacao_what_if.py       # Simulações contrafactuais (what-if)
+│   ├── explicacao_local.py        # ⭐ Explainable local analysis (main)
+│   ├── explicacao_global.py       # Global analysis (exploratory)
+│   └── simulacao_what_if.py       # Counterfactual simulations (what-if)
 │
 ├── utilitarios/
-│   ├── inserir_desvio_manual.py   # Inserção manual robusta (inputs validados)
-│   └── listar_variaveis.py        # Listagem das variáveis disponíveis
+│   ├── inserir_desvio_manual.py   # Robust manual insertion (validated inputs)
+│   └── listar_variaveis.py        # List available variables
 │
 ├── outputs/
-│   ├── shap_local.png             # Gráfico de explicação local
-│   └── shap_global.png            # Gráfico de explicação global
+│   ├── shap_local.png             # Local explanation chart
+│   └── shap_global.png            # Global explanation chart
 │
 ├── docs/
-│   └── ordem_execucao.txt         # Ordem recomendada de execução
+│   └── ordem_execucao.txt         # Recommended execution order
 │
-└── subir_github.sh                # Script para commit & push para GitHub
+└── subir_github.sh                # Script for commit & push to GitHub
 
 
 ⸻
 
-⚙️ Tecnologias utilizadas
+⚙️ Technologies used
 	•	Python 3
 	•	SQLite
 	•	pandas
@@ -104,87 +104,87 @@ ML-Sal/
 
 ⸻
 
-🔍 Fluxo de utilização recomendado
+🔍 Recommended usage flow
 
-1️⃣ Preparar a base de dados (uma vez)
+1️⃣ Prepare the database (once)
 
 python criar_tabela.py
 python importar_historico.py
 python verificar_base.py
 ⸻
 
-2️⃣ Analisar um desvio específico (uso normal)
+2️⃣ Analyze a specific deviation (normal use)
 python explicacao_local.py
-O utilizador:
-	•	introduz o lote
-	•	escolhe o registo (se necessário)
-	•	recebe:
-	•	validação física
-	•	gráfico explicável (shap_local.png)
-	•	interpretação textual
+The user:
+	•	enters the batch
+	•	chooses the record (if needed)
+	•	receives:
+	•	physical validation
+	•	explainable chart (shap_local.png)
+	•	text interpretation
 
 ⸻
 
-3️⃣ Simulações “what-if” (opcional)
+3️⃣ “What-if” simulations (optional)
 python simulacao_what_if.py
-Permite testar cenários hipotéticos sem guardar dados.
+Allows testing hypothetical scenarios without saving data.
 
 ⸻
 
-📊 Estrutura do gráfico de explicação local
+📊 Local explanation chart structure
 
-O gráfico gerado (shap_local.png) segue estas regras:
-	•	🔴 Vermelho → variável que empurra o desvio
-	•	🟢 Verde → variável que compensa o desvio
-	•	Comprimento da barra → magnitude do impacto local
-	•	Percentagem → peso relativo no caso analisado
-	•	Valor medido → apresentado no eixo Y
-	•	Legendas:
-	•	≥ 15% → dentro da barra
-	•	< 15% → junto ao eixo central (0)
+The generated chart (shap_local.png) follows these rules:
+	•	🔴 Red → variable that pushes the deviation
+	•	🟢 Green → variable that compensates the deviation
+	•	Bar length → magnitude of local impact
+	•	Percentage → relative weight in the analyzed case
+	•	Measured value → shown on the Y axis
+	•	Labels:
+	•	≥ 15% → inside the bar
+	•	< 15% → near the central axis (0)
 
-O gráfico não representa causalidade absoluta, apenas sensibilidade local do modelo.
-
-⸻
-
-🚫 Casos inconclusivos
-
-A análise é automaticamente classificada como INCONCLUSIVA quando:
-	•	O sinal do desvio observado (dif_pct_sal)
-	•	contradiz pressupostos físicos do processo
-	•	e a variável em causa é dominante no caso
-
-Nestes casos:
-	•	❌ nenhum gráfico é gerado
-	•	✅ é apresentada uma explicação textual clara
+The chart does not represent absolute causality, only local model sensitivity.
 
 ⸻
 
-🎓 Contexto académico
+🚫 Inconclusive cases
 
-Este projeto foi desenvolvido com enfoque em:
-	•	explicabilidade
-	•	robustez conceptual
-	•	integração entre conhecimento de processo e ML
-	•	transparência na tomada de decisão
+The analysis is automatically classified as INCONCLUSIVE when:
+	•	the sign of the observed deviation (dif_pct_sal)
+	•	contradicts physical process assumptions
+	•	and the variable involved is dominant in the case
 
-É adequado para:
-	•	trabalhos académicos
-	•	projetos de engenharia
-	•	demonstrações de ML explicável aplicado à indústria
+In these cases:
+	•	❌ no chart is generated
+	•	✅ a clear textual explanation is provided
 
 ⸻
 
-📌 Limitações conhecidas
-	•	O modelo é local, não causal
-	•	Variáveis não medidas podem explicar parte do desvio
-	•	Resultados devem ser interpretados com conhecimento de processo
+🎓 Academic context
+
+This project was developed with a focus on:
+	•	explainability
+	•	conceptual robustness
+	•	integration between process knowledge and ML
+	•	transparency in decision-making
+
+It is suitable for:
+	•	academic work
+	•	engineering projects
+	•	demonstrations of explainable ML applied to industry
 
 ⸻
 
-📄 Licença
+📌 Known limitations
+	•	The model is local, not causal
+	•	Unmeasured variables may explain part of the deviation
+	•	Results should be interpreted with process knowledge
 
-Projeto para fins educativos e académicos.
-Sem identificação de contexto industrial específico.
+⸻
+
+📄 License
+
+Project for educational and academic purposes.
+No identification of specific industrial context.
 
 ⸻

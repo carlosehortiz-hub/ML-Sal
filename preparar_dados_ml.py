@@ -5,13 +5,13 @@ from sklearn.impute import SimpleImputer
 
 
 # =========================
-# Ler dados
+# Read data
 # =========================
 conn = sqlite3.connect("ml_sal.db")
 df = pd.read_sql("SELECT * FROM desvios_sal", conn)
 conn.close()
 
-# remover linhas sem target
+# Remove rows without target
 df = df.dropna(subset=["dif_pct_sal"])
 
 # =========================
@@ -20,7 +20,7 @@ df = df.dropna(subset=["dif_pct_sal"])
 y = df["dif_pct_sal"]
 
 # =========================
-# Features (apenas variáveis de processo)
+# Features (process variables only)
 # =========================
 X = df.drop(columns=[
     "id",
@@ -33,7 +33,7 @@ X = df.drop(columns=[
 ])
 
 # =========================
-# Variáveis numéricas
+# Numeric variables
 # =========================
 num_cols = [
     "dif_es",
@@ -50,7 +50,7 @@ num_cols = [
 X_num = X[num_cols]
 
 # =========================
-# Imputação
+# Imputation
 # =========================
 num_imputer = SimpleImputer(strategy="median")
 X_final = pd.DataFrame(
@@ -68,6 +68,6 @@ X_train, X_test, y_train, y_test = train_test_split(
     random_state=42
 )
 
-print("✅ Dados preparados para ML (sem referencia)")
-print("Treino:", X_train.shape)
-print("Teste :", X_test.shape)
+print("✅ Data prepared for ML (without reference)")
+print("Train:", X_train.shape)
+print("Test :", X_test.shape)
