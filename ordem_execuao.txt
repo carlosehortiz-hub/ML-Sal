@@ -14,28 +14,35 @@ preparar_dados_ml.py
 
 ⸻
 
-Step 2 — Train the model
+Step 2 — Data quality report
+
+qualidade_dados.py
+→ reports missing values, rule violations, and IQR outliers
+
+⸻
+
+Step 3 — Train the model
 
 treinar_modelo_baseline.py
 → trains the Random Forest and evaluates performance (R², RMSE)
 
 ⸻
 
-Step 3 — Global explanation
+Step 4 — Global explanation
 
 explicacao_global.py
 → generates the global SHAP chart (shap_global.png)
 
 ⸻
 
-Step 4 — Local explanation (specific case)
+Step 5 — Local explanation (specific case)
 
 explicacao_local.py
-→ generates the local SHAP (shap_local.png) for a row_id
+→ generates the local SHAP (shap_local.png) for a selected record
 
 ⸻
 
-Step 5 — What-if simulations
+Step 6 — What-if simulations
 
 simulacao_what_if.py
 → simulates variable changes and observes the impact on predicted deviation

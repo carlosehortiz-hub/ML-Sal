@@ -52,44 +52,36 @@ Results are presented in a way that is:
 
 ⸻
 
-🗂️ Project structure
+🗂️ Project structure (current flat layout)
+
 ML-Sal/
-│
 ├── .gitignore
 ├── README.md
-│
-├── dados/
-│   ├── matriz_cloretos.csv        # Original historical source (optional)
-│   └── ml_sal.db                  # SQLite database (consolidated history)
-│
-├── base_dados/
-│   ├── criar_tabela.py            # Create SQLite table
-│   ├── importar_historico.py      # Initial history import
-│   ├── verificar_base.py          # Database integrity check
-│   ├── verificar_insercao.py      # Insert confirmation
-│   └── apagar_ultimo_registo.py   # Controlled removal of the last record
-│
-├── ml/
-│   ├── preparar_dados_ml.py       # Prepare data for ML
-│   └── treinar_modelo_baseline.py # Train baseline model
-│
-├── analise/
-│   ├── explicacao_local.py        # ⭐ Explainable local analysis (main)
-│   ├── explicacao_global.py       # Global analysis (exploratory)
-│   └── simulacao_what_if.py       # Counterfactual simulations (what-if)
-│
-├── utilitarios/
-│   ├── inserir_desvio_manual.py   # Robust manual insertion (validated inputs)
-│   └── listar_variaveis.py        # List available variables
-│
-├── outputs/
-│   ├── shap_local.png             # Local explanation chart
-│   └── shap_global.png            # Global explanation chart
-│
-├── docs/
-│   └── ordem_execucao.txt         # Recommended execution order
-│
-└── subir_github.sh                # Script for commit & push to GitHub
+├── apagar_ultimo_registo.py
+├── criar_tabela.py
+├── explicacao_global.py
+├── explicacao_local.py
+├── importar_historico.py
+├── inserir_desvio_manual.py
+├── listar_variaveis.py
+├── matriz_cloretos.csv
+├── menu.py
+├── ml_sal.db
+├── ml_utils.py
+├── ordem_execuao.txt
+├── preparar_dados_ml.py
+├── qualidade_dados.py
+├── shap_global.png
+├── shap_local.png
+├── simulacao_what_if.py
+├── subir_github.sh
+├── subir_github_branch.sh
+├── treinar_modelo_baseline.py
+├── verificar_base.py
+└── verificar_insercao.py
+
+models/
+└── rf_model.joblib
 
 
 ⸻
@@ -106,15 +98,30 @@ ML-Sal/
 
 🔍 Recommended usage flow
 
+Option A — Use the menu
+
+python menu.py
+
+Option B — Run steps manually
+
 1️⃣ Prepare the database (once)
 
 python criar_tabela.py
 python importar_historico.py
 python verificar_base.py
+
 ⸻
 
-2️⃣ Analyze a specific deviation (normal use)
+2️⃣ Run a data quality report
+
+python qualidade_dados.py
+
+⸻
+
+3️⃣ Analyze a specific deviation (normal use)
+
 python explicacao_local.py
+
 The user:
 	•	enters the batch
 	•	chooses the record (if needed)
@@ -125,8 +132,10 @@ The user:
 
 ⸻
 
-3️⃣ “What-if” simulations (optional)
+4️⃣ “What-if” simulations (optional)
+
 python simulacao_what_if.py
+
 Allows testing hypothetical scenarios without saving data.
 
 ⸻
@@ -144,6 +153,14 @@ The generated chart (shap_local.png) follows these rules:
 	•	< 15% → near the central axis (0)
 
 The chart does not represent absolute causality, only local model sensitivity.
+
+⸻
+
+🧠 Model cache
+
+Local/global explanations and what-if simulations reuse a cached model to avoid retraining on every run. If you want to force a retrain, run with:
+
+RETRAIN_MODEL=1 python explicacao_local.py
 
 ⸻
 

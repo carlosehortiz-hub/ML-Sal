@@ -1,20 +1,14 @@
-import sqlite3
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import shap
 
-from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestRegressor
+from ml_utils import load_data, build_features, get_model, transform_features
 
 # ======================================================
 # 1. Read data
 # ======================================================
-conn = sqlite3.connect("ml_sal.db")
-df = pd.read_sql("SELECT * FROM desvios_sal", conn)
-conn.close()
-
-df = df.dropna(subset=["dif_pct_sal"]).reset_index(drop=True)
+df = load_data()
 
 print(f"\n📊 Total available cases: {len(df)}")
 
@@ -64,35 +58,10 @@ data = linha["data"]
 # ======================================================
 # 5. Prepare data for ML
 # ======================================================
-y = df["dif_pct_sal"]
+X, y = build_features(df)
 
-X = df.drop(columns=[
-    "id",
-    "data",
-    "lote",
-    "pct_sal",
-    "cuba",
-    "referencia",
-    "dif_pct_sal"
-])
-
-num_cols = [
-    "dif_es",
-    "dif_hfd",
-    "dif_gs",
-    "ph_entrada",
-    "ph_salga",
-    "densidade",
-    "temperatura",
-    "min_fora",
-    "tempo_fora_espec"
-]
-
-imputer = SimpleImputer(strategy="median")
-X_num = pd.DataFrame(
-    imputer.fit_transform(X[num_cols]),
-    columns=num_cols
-)
+model, imputer = get_model(X, y)
+X_num = transform_features(imputer, X)
 
 # Global index of the selected row
 row_idx = df.index[
@@ -102,17 +71,7 @@ row_idx = df.index[
 ][0]
 
 # ======================================================
-# 6. Model
-# ======================================================
-model = RandomForestRegressor(
-    n_estimators=300,
-    random_state=42,
-    n_jobs=-1
-)
-model.fit(X_num, y)
-
-# ======================================================
-# 7. LOCAL SHAP
+# 6. LOCAL SHAP
 # ======================================================
 explainer = shap.TreeExplainer(model)
 shap_values = explainer(X_num)
@@ -127,14 +86,14 @@ impact_df = pd.DataFrame({
     "variavel": X_num.columns,
     "impacto": vals,
     "percent": percent,
-    "valor_medido": X_num.iloc[row_idx].values
+    "valor_medido": X_num.iloc[row_idx].values,
 })
 
 impact_df = impact_df[impact_df["percent"] >= 1]
 impact_df = impact_df.sort_values("percent", ascending=False)
 
 # ======================================================
-# 8. CHECK ES / HFD DOMINANCE
+# 7. CHECK ES / HFD DOMINANCE
 # ======================================================
 dominante = impact_df.iloc[0]
 var_dom = dominante["variavel"]
@@ -164,7 +123,7 @@ if aplicar_validacao:
             )
 
 # ======================================================
-# 9. OUTPUT
+# 8. OUTPUT
 # ======================================================
 if inconclusivo:
     print("\n📘 INCONCLUSIVE ANALYSIS")
@@ -183,21 +142,8 @@ if inconclusivo:
     exit()
 
 # ======================================================
-# 10. SHAP Chart
+# 9. SHAP Chart
 # ======================================================
-# ======================================================
-# 10. SHAP Chart (WITH measured value + 15% rule)
-# ======================================================
-# ======================================================
-# 10. SHAP Chart — DIRECTIONAL impact (final version)
-# ======================================================
-# ======================================================
-# 10. SHAP Chart — DIRECTIONAL impact (labels always visible)
-# ======================================================
-# ======================================================
-# SHAP Chart — DIRECTIONAL impact (15% rule + zero axis)
-# ======================================================
-
 # Remove ph_entrada from the chart when the record value is 0 (OK)
 impact_df_plot = impact_df.copy()
 if linha.get("ph_entrada") == 0:
@@ -213,7 +159,7 @@ impact_df_plot = impact_df_plot.sort_values("impacto_abs")
 # Y-axis labels with measured value
 impact_df_plot["label_y"] = impact_df_plot.apply(
     lambda r: f"{r['variavel']}\nvalue = {r['valor_medido']:.3g}",
-    axis=1
+    axis=1,
 )
 
 plt.figure(figsize=(10, 6))
@@ -226,7 +172,7 @@ colors = impact_df_plot["impacto"].apply(
 bars = plt.barh(
     impact_df_plot["label_y"],
     impact_df_plot["impacto"],
-    color=colors
+    color=colors,
 )
 
 # Central axis
@@ -236,14 +182,12 @@ plt.axvline(0, color="black", linewidth=0.8)
 for bar, impacto, perc in zip(
     bars,
     impact_df_plot["impacto"],
-    impact_df_plot["percent"]
+    impact_df_plot["percent"],
 ):
     y = bar.get_y() + bar.get_height() / 2
     label = f"{impacto:+.3f} ({perc:.1f}%)"
 
-    # =========================
     # ≥ 15% → inside the bar
-    # =========================
     if perc >= 15:
         plt.text(
             impacto * 0.95,
@@ -252,12 +196,10 @@ for bar, impacto, perc in zip(
             va="center",
             ha="right" if impacto > 0 else "left",
             color="white",
-            fontsize=9
+            fontsize=9,
         )
 
-    # =========================
     # < 15% → near the zero axis, opposite side
-    # =========================
     else:
         offset = 0.002
         x_text = -offset if impacto > 0 else offset
@@ -269,21 +211,22 @@ for bar, impacto, perc in zip(
             va="center",
             ha="right" if impacto > 0 else "left",
             fontsize=9,
-            color="black"
+            color="black",
         )
 
 plt.xlabel("Local impact on predicted deviation (salt %)")
 plt.title(
     f"Local analysis of salt deviation\n"
     f"Batch: {lote} | Tank: {cuba} | salt % diff: {dif_sal:.3f}",
-    fontsize=11
+    fontsize=11,
 )
 
 plt.tight_layout()
 plt.savefig("shap_local.png", dpi=150)
 plt.close()
+
 # ======================================================
-# 11. Final interpretation
+# 10. Final interpretation
 # ======================================================
 print("\n📘 RESULT INTERPRETATION")
 print("=" * 75)

@@ -1,16 +1,11 @@
-import sqlite3
 import pandas as pd
-from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestRegressor
+
+from ml_utils import load_data, build_features, get_model, transform_features
 
 # =========================
 # Read data
 # =========================
-conn = sqlite3.connect("ml_sal.db")
-df = pd.read_sql("SELECT * FROM desvios_sal", conn)
-conn.close()
-
-df = df.dropna(subset=["dif_pct_sal"]).reset_index(drop=True)
+df = load_data()
 
 print(f"\n📊 Total available cases: {len(df)}")
 row_id = int(input("Choose the row_id for the base case: "))
@@ -21,59 +16,20 @@ if row_id < 0 or row_id >= len(df):
 desvio_real = df.iloc[row_id]["dif_pct_sal"]
 
 # =========================
-# Target
-# =========================
-y = df["dif_pct_sal"]
-
-# =========================
 # Features (without reference)
 # =========================
-X = df.drop(columns=[
-    "id",
-    "data",
-    "lote",
-    "pct_sal",
-    "cuba",
-    "referencia",
-    "dif_pct_sal"
-])
-
-num_cols = [
-    "dif_es",
-    "dif_hfd",
-    "dif_gs",
-    "ph_entrada",
-    "ph_salga",
-    "densidade",
-    "temperatura",
-    "min_fora",
-    "tempo_fora_espec"
-]
+X, y = build_features(df)
 
 # =========================
-# Imputation
+# Model (cached)
 # =========================
-imputer = SimpleImputer(strategy="median")
-X_final = pd.DataFrame(
-    imputer.fit_transform(X[num_cols]),
-    columns=num_cols
-)
-
-# =========================
-# Model
-# =========================
-model = RandomForestRegressor(
-    n_estimators=300,
-    random_state=42,
-    n_jobs=-1
-)
-
-model.fit(X_final, y)
+model, imputer = get_model(X, y)
+X_num = transform_features(imputer, X)
 
 # =========================
 # Base case
 # =========================
-x_base = X_final.iloc[row_id].copy()
+x_base = X_num.iloc[row_id].copy()
 desvio_base = model.predict(pd.DataFrame([x_base]))[0]
 
 print("\n📌 BASE CASE")
