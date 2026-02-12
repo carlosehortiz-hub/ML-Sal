@@ -34,7 +34,7 @@ else:
     for i, r in df_lote.iterrows():
         print(
             f"[{i}] Date: {r['data']} | "
-            f"Tank: {r['cuba']} | "
+            f"Vat: {r['cuba']} | "
             f"salt % diff: {r['dif_pct_sal']:.3f}"
         )
 
@@ -129,7 +129,7 @@ if aplicar_validacao:
 if inconclusivo:
     print("\n📘 INCONCLUSIVE ANALYSIS")
     print("=" * 75)
-    print(f"Batch: {lote} | Tank: {cuba} | Date: {data}")
+    print(f"Batch: {lote} | Vat: {cuba} | Date: {data}")
     print(f"Observed deviation (salt % diff): {dif_sal:.3f}\n")
 
     for m in motivos:
@@ -218,7 +218,7 @@ for bar, impacto, perc in zip(
 plt.xlabel("Local impact on predicted deviation (salt %)")
 plt.title(
     f"Local analysis of salt deviation\n"
-    f"Batch: {lote} | Tank: {cuba} | salt % diff: {dif_sal:.3f}",
+    f"Batch: {lote} | Vat: {cuba} | salt % diff: {dif_sal:.3f}",
     fontsize=11,
 )
 

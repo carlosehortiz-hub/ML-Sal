@@ -185,7 +185,7 @@ data = input_data()
 referencia = input_referencia(cursor)
 
 cuba = input_int(
-    "Tank (integer)",
+    "Vat (integer)",
     exemplo="12",
     minimo=1
 )
@@ -255,7 +255,7 @@ print("-" * 60)
 
 print(f"Date               : {data}")
 print(f"Reference          : {referencia}")
-print(f"Tank               : {cuba}")
+print(f"Vat                : {cuba}")
 print(f"Batch              : {lote}")
 print(f"Salt %             : {pct_sal}")
 print(f"Salt % diff (target): {dif_pct_sal}")

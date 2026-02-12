@@ -227,7 +227,7 @@ if mode == "Use existing record":
     )
 
     def label_row(r):
-        return f"{r['index']} | {r['data']} | Tank {r['cuba']} | diff {r['dif_pct_sal']:.3f}"
+        return f"{r['index']} | {r['data']} | Vat {r['cuba']} | diff {r['dif_pct_sal']:.3f}"
 
     options = df_lote.apply(label_row, axis=1).tolist()
     selected = st.selectbox("Record", options)
@@ -244,7 +244,7 @@ if mode == "Use existing record":
 
     st.markdown("---")
     st.write(
-        f"**Batch:** {row['lote']} | **Tank:** {row['cuba']} | **Date:** {row['data']}"
+        f"**Batch:** {row['lote']} | **Vat:** {row['cuba']} | **Date:** {row['data']}"
     )
     st.write(f"**Observed deviation:** {dif_sal:.3f}")
 
@@ -274,7 +274,7 @@ else:
             else:
                 reference = st.text_input("Reference")
         with col3:
-            cuba_raw = st.text_input("Tank (integer)")
+            cuba_raw = st.text_input("Vat (integer)")
 
         lote = st.text_input("Batch")
 
@@ -319,7 +319,7 @@ else:
         if reference is None or str(reference).strip() == "":
             errors.append("Reference cannot be empty.")
 
-        cuba, err = validate_int(cuba_raw, "Tank", min_v=1)
+        cuba, err = validate_int(cuba_raw, "Vat", min_v=1)
         if err:
             errors.append(err)
 
@@ -380,7 +380,7 @@ else:
 
             st.markdown("---")
             st.write(
-                f"**Batch:** {lote} | **Tank:** {cuba} | **Date:** {date}"
+                f"**Batch:** {lote} | **Vat:** {cuba} | **Date:** {date}"
             )
             st.write(f"**Observed deviation:** {dif_pct_sal:.3f}")
             st.write(f"**Predicted deviation:** {pred:.3f}")
