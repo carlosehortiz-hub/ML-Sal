@@ -46,7 +46,6 @@ NUM_COLS = [
     "dif_es",
     "dif_gs",
     "ph_entrada",
-    "ph_salga",
     "densidade",
     "min_fora",
 ]
@@ -183,11 +182,24 @@ def build_features(df):
     return X, y
 
 
+def filter_training_rows(X, y):
+    if "densidade" not in X.columns:
+        return X.copy(), y.copy(), 0
+
+    mask = X["densidade"] != 0
+    removed = int((~mask).sum())
+    return X.loc[mask].copy(), y.loc[mask].copy(), removed
+
+
 def fit_model(X, y, n_estimators=300, random_state=42):
     ensure_core_dependencies()
+    X_train, y_train, _ = filter_training_rows(X, y)
+    if X_train.empty:
+        raise ValueError("No rows left after filtering densidade = 0.")
+
     imputer = SimpleImputer(strategy="median")
     X_num = pd.DataFrame(
-        imputer.fit_transform(X[NUM_COLS]),
+        imputer.fit_transform(X_train[NUM_COLS]),
         columns=NUM_COLS,
     )
 
@@ -196,7 +208,7 @@ def fit_model(X, y, n_estimators=300, random_state=42):
         random_state=random_state,
         n_jobs=-1,
     )
-    model.fit(X_num, y)
+    model.fit(X_num, y_train)
     return model, imputer, X_num
 
 
@@ -229,6 +241,85 @@ def _save_model(model, imputer, path, model_name=None, target_col=None):
     )
 
 
+def _get_auto_train_model_candidates():
+    from sklearn.ensemble import ExtraTreesRegressor, GradientBoostingRegressor
+    from sklearn.linear_model import LinearRegression, Ridge
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    return {
+        "Linear": LinearRegression(),
+        "Ridge": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
+        "RandomForest": RandomForestRegressor(
+            n_estimators=300,
+            random_state=42,
+            n_jobs=-1,
+        ),
+        "ExtraTrees": ExtraTreesRegressor(
+            n_estimators=300,
+            random_state=42,
+            n_jobs=-1,
+        ),
+        "GradientBoosting": GradientBoostingRegressor(random_state=42),
+    }
+
+
+def _resolve_model_choice(raw, model_names):
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        idx = int(raw)
+        if 1 <= idx <= len(model_names):
+            return model_names[idx - 1]
+
+    raw_lower = raw.lower()
+    lower_map = {name.lower(): name for name in model_names}
+    if raw_lower in lower_map:
+        return lower_map[raw_lower]
+
+    compact_map = {
+        name.lower().replace("_", "").replace(" ", ""): name
+        for name in model_names
+    }
+    raw_compact = raw_lower.replace("_", "").replace(" ", "")
+    return compact_map.get(raw_compact)
+
+
+def _pick_auto_train_model(model_names, default_name):
+    env_choice = os.environ.get("ML_SAL_MODEL")
+    if env_choice:
+        resolved = _resolve_model_choice(env_choice, model_names)
+        if resolved:
+            return resolved
+        print(f"Invalid ML_SAL_MODEL='{env_choice}'. Using {default_name}.")
+        return default_name
+
+    can_prompt = sys.stdin is not None and sys.stdin.isatty() and "--streamlit" not in sys.argv
+    if not can_prompt:
+        return default_name
+
+    print("\nNo trained model found. Choose a model to train now:")
+    for idx, name in enumerate(model_names, start=1):
+        marker = " (default)" if name == default_name else ""
+        print(f"{idx}. {name}{marker}")
+
+    raw = input(
+        f"Select model [1-{len(model_names)}] or name (default: {default_name}): "
+    ).strip()
+    if raw == "":
+        return default_name
+
+    resolved = _resolve_model_choice(raw, model_names)
+    if resolved:
+        return resolved
+
+    print(f"Invalid choice '{raw}'. Using {default_name}.")
+    return default_name
+
+
 def get_model(X, y, model_path=MODEL_PATH):
     ensure_core_dependencies()
     retrain = os.environ.get("RETRAIN_MODEL") == "1"
@@ -236,8 +327,27 @@ def get_model(X, y, model_path=MODEL_PATH):
     if payload is not None and payload.get("num_cols") == NUM_COLS:
         return payload["model"], payload["imputer"]
 
-    model, imputer, _ = fit_model(X, y)
-    _save_model(model, imputer, model_path, model_name="RandomForest")
+    X_train, y_train, removed_rows = filter_training_rows(X, y)
+    if removed_rows > 0:
+        print(f"Ignoring {removed_rows} rows with densidade = 0 for training.")
+    if X_train.empty:
+        raise ValueError("No rows left after filtering densidade = 0.")
+
+    imputer = SimpleImputer(strategy="median")
+    X_num = pd.DataFrame(
+        imputer.fit_transform(X_train[NUM_COLS]),
+        columns=NUM_COLS,
+    )
+
+    model_dict = _get_auto_train_model_candidates()
+    model_names = list(model_dict.keys())
+    default_model = "RandomForest" if "RandomForest" in model_dict else model_names[0]
+    selected_name = _pick_auto_train_model(model_names, default_model)
+
+    model = model_dict[selected_name]
+    model.fit(X_num, y_train)
+    _save_model(model, imputer, model_path, model_name=selected_name)
+    print(f"Auto-trained and saved model '{selected_name}' to {model_path}")
     return model, imputer
 
 
@@ -787,17 +897,10 @@ def insert_deviation_manual(db_path=None):
 def prepare_ml_data(db_path=None):
     ensure_core_dependencies()
     df = load_data(db_path)
-    y = df[TARGET_COL]
-
-    X = df.drop(columns=[
-        "id",
-        "data",
-        "lote",
-        "pct_sal",
-        "cuba",
-        "referencia",
-        "dif_pct_sal",
-    ])
+    X, y = build_features(df)
+    X, y, removed_rows = filter_training_rows(X, y)
+    if removed_rows > 0:
+        print(f"Ignoring {removed_rows} rows with densidade = 0.")
 
     X_num = X[NUM_COLS]
     num_imputer = SimpleImputer(strategy="median")
@@ -829,17 +932,14 @@ def train_baseline_model(db_path=None):
     from sklearn.base import clone
 
     df = load_data(db_path)
-    y = df[TARGET_COL]
+    X, y = build_features(df)
+    X, y, removed_rows = filter_training_rows(X, y)
+    if removed_rows > 0:
+        print(f"Ignoring {removed_rows} rows with densidade = 0 for training/evaluation.")
 
-    X = df.drop(columns=[
-        "id",
-        "data",
-        "lote",
-        "pct_sal",
-        "cuba",
-        "referencia",
-        "dif_pct_sal",
-    ])
+    if len(X) < 2:
+        print("Not enough rows after filtering densidade = 0.")
+        return
 
     X_num = X[NUM_COLS]
     imputer = SimpleImputer(strategy="median")
@@ -909,9 +1009,16 @@ def train_baseline_model(db_path=None):
     ]
 
     print("\nModel comparison (same train/test split)")
+    split_metrics = []
     for name, est in models:
         m = evaluate_model(name, est, X_train, y_train, X_test, y_test, y_std)
         print(f"{m[0]:<16} R2={m[1]:.3f}  RMSE={m[2]:.4f}  RMSE/STD={m[3]:.3f}")
+        split_metrics.append({
+            "name": m[0],
+            "r2": m[1],
+            "rmse": m[2],
+            "rmse_rel": m[3],
+        })
 
     # Cross-validation (more stable estimate)
     n_samples = len(X_final)
@@ -923,6 +1030,7 @@ def train_baseline_model(db_path=None):
     cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
     scoring = {"r2": "r2", "mse": "neg_mean_squared_error"}
     y_std_all = y.std()
+    cv_metrics = []
 
     print(f"\nCross-validation (KFold, n_splits={n_splits})")
     for name, est in models:
@@ -938,6 +1046,14 @@ def train_baseline_model(db_path=None):
             f"RMSE={rmse_mean:.4f}±{rmse_std:.4f}  "
             f"RMSE/STD={rmse_rel_mean:.3f}"
         )
+        cv_metrics.append({
+            "name": name,
+            "r2_mean": r2_mean,
+            "r2_std": r2_std,
+            "rmse_mean": rmse_mean,
+            "rmse_std": rmse_std,
+            "rmse_rel_mean": rmse_rel_mean,
+        })
 
     # Top interaction coefficients (Ridge with interactions)
     print("\nTop interaction coefficients (Interactions_Ridge)")
@@ -1054,7 +1170,29 @@ def train_baseline_model(db_path=None):
 
     model_dict = {name: est for name, est in models if name != "DummyMean"}
     model_names = list(model_dict.keys())
-    default_model = "RandomForest" if "RandomForest" in model_dict else model_names[0]
+    split_best = min(
+        [m for m in split_metrics if m["name"] in model_dict],
+        key=lambda m: m["rmse"],
+    )
+    cv_best = min(
+        [m for m in cv_metrics if m["name"] in model_dict],
+        key=lambda m: m["rmse_mean"],
+    )
+
+    recommended_model = cv_best["name"] if cv_best is not None else split_best["name"]
+    print("\nMost precise model")
+    print(
+        f"Holdout best: {split_best['name']} "
+        f"(RMSE={split_best['rmse']:.4f}, R2={split_best['r2']:.3f})"
+    )
+    if cv_best is not None:
+        print(
+            f"CV best     : {cv_best['name']} "
+            f"(RMSE={cv_best['rmse_mean']:.4f}, R2={cv_best['r2_mean']:.3f})"
+        )
+    print(f"Recommended to save: {recommended_model}")
+
+    default_model = recommended_model if recommended_model in model_dict else model_names[0]
     selected_name = _pick_model_name(model_names, default_model)
     selected_estimator = clone(model_dict[selected_name])
     selected_estimator.fit(X_final, y)
@@ -1678,7 +1816,6 @@ def streamlit_app():
                 densidade_raw = st.text_input("Density (e.g.: 18.8)")
             with col2:
                 dif_gs_raw = st.text_input("Dif_GS (e.g.: 0.20)")
-                ph_salga_raw = st.text_input("Brine pH (e.g.: 5.05)")
                 min_fora_raw = st.text_input("Minutes out of spec (e.g.: 25)")
 
             submitted = st.form_submit_button("Run analysis")
@@ -1713,13 +1850,11 @@ def streamlit_app():
             if err:
                 errors.append(err)
 
-            ph_salga, err = validate_float(ph_salga_raw, "Brine pH", min_v=3.5, max_v=7.5)
-            if err:
-                errors.append(err)
-
             densidade, err = validate_float(densidade_raw, "Density", min_v=0)
             if err:
                 errors.append(err)
+            elif densidade <= 0:
+                errors.append("Density must be > 0 (0 is excluded from model training).")
 
             min_fora, err = validate_float(min_fora_raw, "Minutes out of spec", min_v=0)
             if err:
@@ -1733,7 +1868,6 @@ def streamlit_app():
                     dif_es,
                     dif_gs,
                     ph_entrada,
-                    ph_salga,
                     densidade,
                     min_fora,
                 ]
@@ -1834,14 +1968,6 @@ def streamlit_app():
 
             with col2:
                 dif_gs = st.number_input("Dif_GS", value=float(base_values["dif_gs"]))
-                ph_min = min(3.5, float(base_values["ph_salga"]))
-                ph_max = max(7.5, float(base_values["ph_salga"]))
-                ph_salga = st.number_input(
-                    "Brine pH",
-                    min_value=ph_min,
-                    max_value=ph_max,
-                    value=float(base_values["ph_salga"]),
-                )
                 min_fora_min = min(0.0, float(base_values["min_fora"]))
                 min_fora = st.number_input(
                     "Minutes out of spec",
@@ -1856,7 +1982,6 @@ def streamlit_app():
                 dif_es,
                 dif_gs,
                 ph_entrada,
-                ph_salga,
                 densidade,
                 min_fora,
             ]

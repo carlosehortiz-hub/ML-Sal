@@ -24,6 +24,7 @@ if str(ROOT_DIR) not in sys.path:
 from ml.ml_utils import (
     load_data,
     build_features,
+    filter_training_rows,
     NUM_COLS,
     TARGET_COL,
     MODEL_PATH,
@@ -43,6 +44,13 @@ if df.empty:
 # Target
 # =========================
 X, y = build_features(df)
+X, y, removed_rows = filter_training_rows(X, y)
+if removed_rows > 0:
+    print(f"⚠️ Ignoring {removed_rows} rows with densidade = 0 for training/evaluation.")
+
+if len(X) < 2:
+    print("❌ Not enough rows after filtering densidade = 0.")
+    raise SystemExit(1)
 
 # =========================
 # Features (without reference)
@@ -132,14 +140,22 @@ models = [
 ]
 
 print("\n📊 Model comparison (same train/test split)")
+split_metrics = []
 for name, est in models:
     m = evaluate_model(name, est, X_train, y_train, X_test, y_test, y_std)
     print(f"{m[0]:<16} R²={m[1]:.3f}  RMSE={m[2]:.4f}  RMSE/STD={m[3]:.3f}")
+    split_metrics.append({
+        "name": m[0],
+        "r2": m[1],
+        "rmse": m[2],
+        "rmse_rel": m[3],
+    })
 
 # =========================
 # Cross-validation (more stable estimate)
 # =========================
 n_samples = len(X_final)
+cv_metrics = []
 if n_samples < 2:
     print("\n⚠️  Not enough samples for cross-validation.")
 else:
@@ -162,6 +178,14 @@ else:
             f"RMSE={rmse_mean:.4f}±{rmse_std:.4f}  "
             f"RMSE/STD={rmse_rel_mean:.3f}"
         )
+        cv_metrics.append({
+            "name": name,
+            "r2_mean": r2_mean,
+            "r2_std": r2_std,
+            "rmse_mean": rmse_mean,
+            "rmse_std": rmse_std,
+            "rmse_rel_mean": rmse_rel_mean,
+        })
 
 # =========================
 # Top interaction coefficients (Ridge with interactions)
@@ -286,7 +310,31 @@ def _pick_model_name(model_names, default_name):
 
 model_dict = {name: est for name, est in models if name != "DummyMean"}
 model_names = list(model_dict.keys())
-default_model = "RandomForest" if "RandomForest" in model_dict else model_names[0]
+split_best = min(
+    [m for m in split_metrics if m["name"] in model_dict],
+    key=lambda m: m["rmse"],
+)
+cv_best = None
+if cv_metrics:
+    cv_best = min(
+        [m for m in cv_metrics if m["name"] in model_dict],
+        key=lambda m: m["rmse_mean"],
+    )
+
+recommended_model = cv_best["name"] if cv_best is not None else split_best["name"]
+print("\n🏆 Most precise model")
+print(
+    f"Holdout best: {split_best['name']} "
+    f"(RMSE={split_best['rmse']:.4f}, R²={split_best['r2']:.3f})"
+)
+if cv_best is not None:
+    print(
+        f"CV best     : {cv_best['name']} "
+        f"(RMSE={cv_best['rmse_mean']:.4f}, R²={cv_best['r2_mean']:.3f})"
+    )
+print(f"Recommended to save: {recommended_model}")
+
+default_model = recommended_model if recommended_model in model_dict else model_names[0]
 selected_name = _pick_model_name(model_names, default_model)
 selected_estimator = clone(model_dict[selected_name])
 selected_estimator.fit(X_final, y)

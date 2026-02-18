@@ -1,8 +1,12 @@
 import os
+import sys
 import sqlite3
 import pandas as pd
 from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 import joblib
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -16,7 +20,6 @@ NUM_COLS = [
     "dif_es",
     "dif_gs",
     "ph_entrada",
-    "ph_salga",
     "densidade",
     "min_fora",
 ]
@@ -51,10 +54,23 @@ def build_features(df):
     return X, y
 
 
+def filter_training_rows(X, y):
+    if "densidade" not in X.columns:
+        return X.copy(), y.copy(), 0
+
+    mask = X["densidade"] != 0
+    removed = int((~mask).sum())
+    return X.loc[mask].copy(), y.loc[mask].copy(), removed
+
+
 def fit_model(X, y, n_estimators=300, random_state=42):
+    X_train, y_train, _ = filter_training_rows(X, y)
+    if X_train.empty:
+        raise ValueError("No rows left after filtering densidade = 0.")
+
     imputer = SimpleImputer(strategy="median")
     X_num = pd.DataFrame(
-        imputer.fit_transform(X[NUM_COLS]),
+        imputer.fit_transform(X_train[NUM_COLS]),
         columns=NUM_COLS,
     )
 
@@ -63,7 +79,7 @@ def fit_model(X, y, n_estimators=300, random_state=42):
         random_state=random_state,
         n_jobs=-1,
     )
-    model.fit(X_num, y)
+    model.fit(X_num, y_train)
 
     return model, imputer, X_num
 
@@ -95,6 +111,85 @@ def _save_model(model, imputer, path, model_name=None, target_col=None):
     )
 
 
+def _get_auto_train_model_candidates():
+    return {
+        "Linear": LinearRegression(),
+        "Ridge": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
+        "RandomForest": RandomForestRegressor(
+            n_estimators=300,
+            random_state=42,
+            n_jobs=-1,
+        ),
+        "ExtraTrees": ExtraTreesRegressor(
+            n_estimators=300,
+            random_state=42,
+            n_jobs=-1,
+        ),
+        "GradientBoosting": GradientBoostingRegressor(random_state=42),
+    }
+
+
+def _resolve_model_choice(raw, model_names):
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        idx = int(raw)
+        if 1 <= idx <= len(model_names):
+            return model_names[idx - 1]
+
+    raw_lower = raw.lower()
+    lower_map = {name.lower(): name for name in model_names}
+    if raw_lower in lower_map:
+        return lower_map[raw_lower]
+
+    compact_map = {
+        name.lower().replace("_", "").replace(" ", ""): name
+        for name in model_names
+    }
+    raw_compact = raw_lower.replace("_", "").replace(" ", "")
+    return compact_map.get(raw_compact)
+
+
+def _pick_auto_train_model(model_names, default_name):
+    env_choice = os.environ.get("ML_SAL_MODEL")
+    if env_choice:
+        resolved = _resolve_model_choice(env_choice, model_names)
+        if resolved:
+            return resolved
+        print(f"⚠️ Invalid ML_SAL_MODEL='{env_choice}'. Using {default_name}.")
+        return default_name
+
+    can_prompt = (
+        sys.stdin is not None
+        and sys.stdin.isatty()
+        and "streamlit" not in sys.modules
+        and os.environ.get("STREAMLIT_SERVER_PORT") is None
+    )
+    if not can_prompt:
+        return default_name
+
+    print("\nNo trained model found. Choose a model to train now:")
+    for idx, name in enumerate(model_names, start=1):
+        marker = " (default)" if name == default_name else ""
+        print(f"{idx}. {name}{marker}")
+
+    raw = input(
+        f"Select model [1-{len(model_names)}] or name (default: {default_name}): "
+    ).strip()
+    if raw == "":
+        return default_name
+
+    resolved = _resolve_model_choice(raw, model_names)
+    if resolved:
+        return resolved
+
+    print(f"⚠️ Invalid choice '{raw}'. Using {default_name}.")
+    return default_name
+
+
 def get_model(X, y, model_path=MODEL_PATH):
     retrain = os.environ.get("RETRAIN_MODEL") == "1"
 
@@ -102,8 +197,27 @@ def get_model(X, y, model_path=MODEL_PATH):
     if payload is not None and payload.get("num_cols") == NUM_COLS:
         return payload["model"], payload["imputer"]
 
-    model, imputer, _ = fit_model(X, y)
-    _save_model(model, imputer, model_path, model_name="RandomForest")
+    X_train, y_train, removed_rows = filter_training_rows(X, y)
+    if removed_rows > 0:
+        print(f"⚠️ Ignoring {removed_rows} rows with densidade = 0 for training.")
+    if X_train.empty:
+        raise ValueError("No rows left after filtering densidade = 0.")
+
+    imputer = SimpleImputer(strategy="median")
+    X_num = pd.DataFrame(
+        imputer.fit_transform(X_train[NUM_COLS]),
+        columns=NUM_COLS,
+    )
+
+    model_dict = _get_auto_train_model_candidates()
+    model_names = list(model_dict.keys())
+    default_model = "RandomForest" if "RandomForest" in model_dict else model_names[0]
+    selected_name = _pick_auto_train_model(model_names, default_model)
+
+    model = model_dict[selected_name]
+    model.fit(X_num, y_train)
+    _save_model(model, imputer, model_path, model_name=selected_name)
+    print(f"✅ Auto-trained and saved model '{selected_name}' to {model_path}")
     return model, imputer
 
 

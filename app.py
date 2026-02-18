@@ -313,7 +313,6 @@ elif mode == "Manual input (no DB write)":
             densidade_raw = st.text_input("Density (e.g.: 18.8)")
         with col2:
             dif_gs_raw = st.text_input("Dif_GS (e.g.: 0.20)")
-            ph_salga_raw = st.text_input("Brine pH (e.g.: 5.05)")
             min_fora_raw = st.text_input("Minutes out of spec (e.g.: 25)")
 
         submitted = st.form_submit_button("Run analysis")
@@ -349,13 +348,11 @@ elif mode == "Manual input (no DB write)":
         if err:
             errors.append(err)
 
-        ph_salga, err = validate_float(ph_salga_raw, "Brine pH", min_v=3.5, max_v=7.5)
-        if err:
-            errors.append(err)
-
         densidade, err = validate_float(densidade_raw, "Density", min_v=0)
         if err:
             errors.append(err)
+        elif densidade <= 0:
+            errors.append("Density must be > 0 (0 is excluded from model training).")
 
         min_fora, err = validate_float(min_fora_raw, "Minutes out of spec", min_v=0)
         if err:
@@ -369,12 +366,11 @@ elif mode == "Manual input (no DB write)":
                 dif_es,
                 dif_gs,
                 ph_entrada,
-                ph_salga,
                 densidade,
                 min_fora,
             ]
 
-    impact_df, X_row_num = build_impact_df(model, imputer, row_values, background)
+            impact_df, X_row_num = build_impact_df(model, imputer, row_values, background)
             pred = model.predict(X_row_num)[0]
 
             st.markdown("---")
@@ -419,12 +415,12 @@ else:
         use_container_width=True,
     )
 
-        def label_row_wi(r):
-            target_label = "salt %" if TARGET_COL == "pct_sal" else "diff"
-            return (
-                f"{r['index']} | {r['data']} | Vat {r['cuba']} | "
-                f"{target_label} {r[TARGET_COL]:.3f}"
-            )
+    def label_row_wi(r):
+        target_label = "salt %" if TARGET_COL == "pct_sal" else "diff"
+        return (
+            f"{r['index']} | {r['data']} | Vat {r['cuba']} | "
+            f"{target_label} {r[TARGET_COL]:.3f}"
+        )
 
     options = df_lote.apply(label_row_wi, axis=1).tolist()
     selected = st.selectbox("Base record", options, key="what_if_record")
@@ -471,14 +467,6 @@ else:
 
         with col2:
             dif_gs = st.number_input("Dif_GS", value=float(base_values["dif_gs"]))
-            ph_min = min(3.5, float(base_values["ph_salga"]))
-            ph_max = max(7.5, float(base_values["ph_salga"]))
-            ph_salga = st.number_input(
-                "Brine pH",
-                min_value=ph_min,
-                max_value=ph_max,
-                value=float(base_values["ph_salga"]),
-            )
             min_fora_min = min(0.0, float(base_values["min_fora"]))
             min_fora = st.number_input(
                 "Minutes out of spec",
@@ -493,7 +481,6 @@ else:
             dif_es,
             dif_gs,
             ph_entrada,
-            ph_salga,
             densidade,
             min_fora,
         ]

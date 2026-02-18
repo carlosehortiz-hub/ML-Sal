@@ -14,6 +14,7 @@ conn.close()
 
 # Remove rows without target
 df = df.dropna(subset=["dif_pct_sal"])
+df = df[df["densidade"] != 0].reset_index(drop=True)
 
 # =========================
 # Target
@@ -40,7 +41,6 @@ num_cols = [
     "dif_es",
     "dif_gs",
     "ph_entrada",
-    "ph_salga",
     "densidade",
     "min_fora",
 ]
