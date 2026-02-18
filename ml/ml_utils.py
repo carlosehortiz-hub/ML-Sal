@@ -9,16 +9,16 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 
+TARGET_COL = "dif_pct_sal"
+DEVIATION_COL = "dif_pct_sal"
+
 NUM_COLS = [
     "dif_es",
-    "dif_hfd",
     "dif_gs",
     "ph_entrada",
     "ph_salga",
     "densidade",
-    "temperatura",
     "min_fora",
-    "tempo_fora_espec",
 ]
 
 DROP_COLS = [
@@ -41,12 +41,12 @@ def load_data(db_path=None):
     df = pd.read_sql("SELECT * FROM desvios_sal", conn)
     conn.close()
 
-    df = df.dropna(subset=["dif_pct_sal"]).reset_index(drop=True)
+    df = df.dropna(subset=[TARGET_COL]).reset_index(drop=True)
     return df
 
 
 def build_features(df):
-    y = df["dif_pct_sal"]
+    y = df[TARGET_COL]
     X = df.drop(columns=DROP_COLS)
     return X, y
 
@@ -76,16 +76,20 @@ def _load_model(path):
         return None
     if "model" not in payload or "imputer" not in payload:
         return None
+    if "target_col" not in payload or payload.get("target_col") != TARGET_COL:
+        return None
     return payload
 
 
-def _save_model(model, imputer, path):
+def _save_model(model, imputer, path, model_name=None, target_col=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     joblib.dump(
         {
             "model": model,
             "imputer": imputer,
             "num_cols": NUM_COLS,
+            "model_name": model_name,
+            "target_col": target_col or TARGET_COL,
         },
         path,
     )
@@ -99,7 +103,7 @@ def get_model(X, y, model_path=MODEL_PATH):
         return payload["model"], payload["imputer"]
 
     model, imputer, _ = fit_model(X, y)
-    _save_model(model, imputer, model_path)
+    _save_model(model, imputer, model_path, model_name="RandomForest")
     return model, imputer
 
 
@@ -155,7 +159,7 @@ def data_quality_report(df):
             print(f"⚠️  {col}: {below} below, {above} above")
 
     print("\n📈 Outliers (IQR method)")
-    numeric_cols = [c for c in NUM_COLS + ["dif_pct_sal"] if c in df.columns]
+    numeric_cols = [c for c in NUM_COLS + [TARGET_COL] if c in df.columns]
     outlier_rows = 0
 
     for col in numeric_cols:

@@ -59,6 +59,7 @@ ML-Sal/
 ├── README.md
 ├── app.py
 ├── menu.py
+├── ml_sal_single.py
 ├── subir_github.sh
 ├── subir_github_branch.sh
 ├── ml_sal.db
@@ -158,6 +159,22 @@ This interface supports:
 	•	Manual input (no DB write)
 	•	What-if simulation on a base record
 	•	Local SHAP explanation with the same validations
+
+⸻
+
+Option C — Single-file bundle (portable / Colab)
+
+python ml_sal_single.py
+streamlit run ml_sal_single.py -- --streamlit
+
+Notes:
+	•	Auto-installs dependencies by default (set ML_SAL_AUTO_INSTALL=0 to disable)
+	•	Keep ml_sal.db and/or matriz_cloretos.csv in the same folder, or set:
+		•	ML_SAL_DB_PATH
+		•	ML_SAL_CSV_PATH
+		•	ML_SAL_OUTPUTS_DIR
+		•	ML_SAL_MODELS_DIR
+	•	If you only have the .db file, avoid the "Import history" option
 
 ⸻
 

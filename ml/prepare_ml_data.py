@@ -1,4 +1,5 @@
 import sqlite3
+import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.impute import SimpleImputer
@@ -37,14 +38,11 @@ X = df.drop(columns=[
 # =========================
 num_cols = [
     "dif_es",
-    "dif_hfd",
     "dif_gs",
     "ph_entrada",
     "ph_salga",
     "densidade",
-    "temperatura",
     "min_fora",
-    "tempo_fora_espec"
 ]
 
 X_num = X[num_cols]

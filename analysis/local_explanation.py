@@ -1,10 +1,25 @@
 import os
+import sys
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import shap
 
-from ml.ml_utils import load_data, build_features, get_model, transform_features, OUTPUTS_DIR
+# Ensure project root is on sys.path when running from subdirectories.
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from ml.ml_utils import (
+    load_data,
+    build_features,
+    get_model,
+    transform_features,
+    OUTPUTS_DIR,
+    TARGET_COL,
+    DEVIATION_COL,
+)
 
 # ======================================================
 # 1. Read data
@@ -32,10 +47,11 @@ if len(df_lote) == 1:
 else:
     print(f"\n⚠️ Found {len(df_lote)} records for batch {lote}:\n")
     for i, r in df_lote.iterrows():
+        target_label = "salt %" if TARGET_COL == "pct_sal" else "salt % diff"
         print(
             f"[{i}] Date: {r['data']} | "
             f"Vat: {r['cuba']} | "
-            f"salt % diff: {r['dif_pct_sal']:.3f}"
+            f"{target_label}: {r[TARGET_COL]:.3f}"
         )
 
     while True:
@@ -48,7 +64,7 @@ else:
 # ======================================================
 # 4. Extract key variables
 # ======================================================
-dif_sal = linha["dif_pct_sal"]
+target_value = linha[TARGET_COL]
 dif_es = linha["dif_es"]
 dif_hfd = linha["dif_hfd"]
 
@@ -74,10 +90,15 @@ row_idx = df.index[
 # ======================================================
 # 6. LOCAL SHAP
 # ======================================================
-explainer = shap.TreeExplainer(model)
-shap_values = explainer(X_num)
+background = X_num.sample(
+    n=min(200, len(X_num)),
+    random_state=42,
+)
+explainer = shap.Explainer(model, background)
+row_data = X_num.iloc[[row_idx]]
+shap_values = explainer(row_data)
 
-vals = shap_values.values[row_idx]
+vals = shap_values.values[0]
 abs_vals = np.abs(vals)
 
 total = abs_vals.sum()
@@ -99,7 +120,7 @@ impact_df = impact_df.sort_values("percent", ascending=False)
 dominante = impact_df.iloc[0]
 var_dom = dominante["variavel"]
 
-aplicar_validacao = var_dom in ["dif_es", "dif_hfd"]
+aplicar_validacao = TARGET_COL == DEVIATION_COL and var_dom in ["dif_es", "dif_hfd"]
 
 inconclusivo = False
 motivos = []
@@ -107,7 +128,7 @@ motivos = []
 if aplicar_validacao:
     # ES dominant → inverse relationship
     if var_dom == "dif_es":
-        if (dif_sal > 0 and dif_es > 0) or (dif_sal < 0 and dif_es < 0):
+        if (target_value > 0 and dif_es > 0) or (target_value < 0 and dif_es < 0):
             inconclusivo = True
             motivos.append(
                 "ES is the dominant variable, but the deviation sign\n"
@@ -116,7 +137,7 @@ if aplicar_validacao:
 
     # HFD dominant → direct relationship
     if var_dom == "dif_hfd":
-        if (dif_sal > 0 and dif_hfd < 0) or (dif_sal < 0 and dif_hfd > 0):
+        if (target_value > 0 and dif_hfd < 0) or (target_value < 0 and dif_hfd > 0):
             inconclusivo = True
             motivos.append(
                 "HFD is the dominant variable, but the deviation sign\n"
@@ -130,7 +151,10 @@ if inconclusivo:
     print("\n📘 INCONCLUSIVE ANALYSIS")
     print("=" * 75)
     print(f"Batch: {lote} | Vat: {cuba} | Date: {data}")
-    print(f"Observed deviation (salt % diff): {dif_sal:.3f}\n")
+    if TARGET_COL == "pct_sal":
+        print(f"Observed salt %: {target_value:.3f}\n")
+    else:
+        print(f"Observed deviation (salt % diff): {target_value:.3f}\n")
 
     for m in motivos:
         print(f"- {m}")
@@ -215,10 +239,12 @@ for bar, impacto, perc in zip(
             color="black",
         )
 
-plt.xlabel("Local impact on predicted deviation (salt %)")
+label_target = "predicted salt %" if TARGET_COL == "pct_sal" else "predicted deviation"
+plt.xlabel(f"Local impact on {label_target}")
+title_label = "salt %" if TARGET_COL == "pct_sal" else "salt % diff"
 plt.title(
-    f"Local analysis of salt deviation\n"
-    f"Batch: {lote} | Vat: {cuba} | salt % diff: {dif_sal:.3f}",
+    f"Local analysis of salt\n"
+    f"Batch: {lote} | Vat: {cuba} | {title_label}: {target_value:.3f}",
     fontsize=11,
 )
 

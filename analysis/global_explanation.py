@@ -1,6 +1,13 @@
 import os
+import sys
+from pathlib import Path
 import shap
 import matplotlib.pyplot as plt
+
+# Ensure project root is on sys.path when running from subdirectories.
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from ml.ml_utils import load_data, build_features, get_model, transform_features, OUTPUTS_DIR
 
@@ -28,8 +35,12 @@ sample = X_num.sample(
     random_state=42,
 )
 
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(sample)
+background = X_num.sample(
+    n=min(200, len(X_num)),
+    random_state=42,
+)
+explainer = shap.Explainer(model, background)
+shap_values = explainer(sample)
 
 plt.figure(figsize=(10, 6))
 shap.summary_plot(

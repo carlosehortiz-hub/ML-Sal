@@ -1,6 +1,13 @@
+import sys
+from pathlib import Path
 import pandas as pd
 
-from ml.ml_utils import load_data, build_features, get_model, transform_features
+# Ensure project root is on sys.path when running from subdirectories.
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from ml.ml_utils import load_data, build_features, get_model, transform_features, TARGET_COL
 
 ERROR_EPS = 0.01
 
@@ -15,7 +22,7 @@ row_id = int(input("Choose the row_id for the base case: "))
 if row_id < 0 or row_id >= len(df):
     raise ValueError("Invalid row_id")
 
-desvio_real = df.iloc[row_id]["dif_pct_sal"]
+desvio_real = df.iloc[row_id][TARGET_COL]
 
 # =========================
 # Features (without reference)
@@ -34,9 +41,10 @@ X_num = transform_features(imputer, X)
 x_base = X_num.iloc[row_id].copy()
 desvio_base = model.predict(pd.DataFrame([x_base]))[0]
 
+label = "salt % diff" if TARGET_COL == "dif_pct_sal" else "salt %"
 print("\n📌 BASE CASE")
-print(f"REAL deviation   : {desvio_real:.3f}")
-print(f"PREDICTED deviation: {desvio_base:.3f}")
+print(f"REAL {label}        : {desvio_real:.3f}")
+print(f"PREDICTED {label}   : {desvio_base:.3f}")
 err_abs = abs(desvio_real - desvio_base)
 err_pct = err_abs / max(abs(desvio_real), ERROR_EPS) * 100
 print(f"Unexplained % (obs vs baseline): {err_pct:.1f}% (eps=0.01)")
@@ -77,8 +85,8 @@ while True:
         print("\n📊 RESULT")
         for v, (a, n) in alteracoes.items():
             print(f"{v}: {a} → {n}")
-        print(f"Predicted deviation: {desvio_sim:.3f}")
-        print(f"Impact vs base: {impacto:+.3f}")
+        print(f"Predicted {label}: {desvio_sim:.3f}")
+print(f"Impact vs base: {impacto:+.3f}")
 
     if input("\nNew simulation? (y/n): ").lower() != "y":
         break

@@ -204,7 +204,7 @@ while lote == "":
 # ======================================================
 
 pct_sal = input_float("Measured salt %", exemplo="1.60", minimo=0)
-dif_pct_sal = input_float("Salt % difference (TARGET)", exemplo="-0.040")
+dif_pct_sal = input_float("Salt % difference", exemplo="-0.040")
 
 # ======================================================
 # PROCESS VARIABLES
@@ -258,7 +258,7 @@ print(f"Reference          : {referencia}")
 print(f"Vat                : {cuba}")
 print(f"Batch              : {lote}")
 print(f"Salt %             : {pct_sal}")
-print(f"Salt % diff (target): {dif_pct_sal}")
+print(f"Salt % diff         : {dif_pct_sal}")
 print(f"Dif_ES             : {dif_es}")
 print(f"Dif_HFD            : {dif_hfd}")
 print(f"Dif_GS             : {dif_gs}")
