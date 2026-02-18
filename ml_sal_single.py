@@ -651,6 +651,222 @@ def list_variables(csv_path=None):
         print(col)
 
 
+def pearson_heatmap_analysis(csv_path=None, out_path=None, db_path=None, source=None):
+    ensure_core_dependencies()
+    csv_path = _resolve_path(csv_path, DEFAULT_CSV_PATH)
+    db_path = _resolve_path(db_path, DEFAULT_DB_PATH)
+    out_path = _resolve_path(out_path, os.path.join(OUTPUTS_DIR, "pearson_heatmap.png"))
+
+    source_norm = (source or "").strip().lower()
+    if source_norm not in {"db", "csv"}:
+        default_source = "db" if os.path.exists(db_path) else "csv"
+        raw = input(
+            f"Heatmap source [db/csv] (default: {default_source}): "
+        ).strip().lower()
+        source_norm = raw if raw in {"db", "csv"} else default_source
+
+    if source_norm == "db":
+        if not os.path.exists(db_path):
+            print(f"DB not found: {db_path}")
+            return
+        conn = sqlite3.connect(db_path)
+        try:
+            df = pd.read_sql("SELECT * FROM desvios_sal", conn)
+        except Exception as exc:
+            print(f"Could not read table 'desvios_sal' from DB: {exc}")
+            conn.close()
+            return
+        conn.close()
+    else:
+        if not os.path.exists(csv_path):
+            print(f"CSV not found: {csv_path}")
+            return
+
+        df = pd.read_csv(csv_path, sep=None, engine="python")
+        df.columns = (
+            df.columns
+            .str.replace("%", "pct", regex=False)
+            .str.replace(" ", "_")
+            .str.replace("__", "_")
+            .str.lower()
+        )
+        df = df.rename(columns={"\ufeffdata": "data"})
+        df = df.replace(["#VALUE!", "#DIV/0!", "#N/A", "N/A", ""], pd.NA)
+
+        if "data" in df.columns:
+            df["data"] = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
+
+        percent_cols = ["pct_sal", "dif_pct_sal", "dif_es", "dif_hfd", "dif_gs"]
+        for col in percent_cols:
+            if col not in df.columns:
+                continue
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace("%", "", regex=False)
+                .str.replace(",", ".", regex=False)
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        if "ph_entrada_salga" in df.columns:
+            df["ph_entrada_salga"] = (
+                df["ph_entrada_salga"]
+                .astype(str)
+                .str.upper()
+                .map({"OK": 0, "NOK": 1})
+            )
+
+        num_cols = [
+            "ph_salga",
+            "densidade_salga",
+            "temperatura_salga",
+            "min_fora",
+            "tempo_fora_espec",
+        ]
+        for col in num_cols:
+            if col not in df.columns:
+                continue
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace(",", ".", regex=False)
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df = df.rename(columns={
+            "ph_entrada_salga": "ph_entrada",
+            "densidade_salga": "densidade",
+            "temperatura_salga": "temperatura",
+        })
+
+    df_num = df.select_dtypes(include="number")
+    if "id" in df_num.columns:
+        df_num = df_num.drop(columns=["id"])
+    if df_num.empty:
+        print("No numeric columns found for correlation.")
+        return
+
+    corr = df_num.corr(method="pearson")
+    print("\nNumeric columns used in correlation:")
+    print(", ".join(df_num.columns))
+
+    target_default = TARGET_COL if TARGET_COL in corr.columns else "dif_pct_sal"
+    target_col = input(
+        f"\nTarget column for exclusions [default: {target_default}]: "
+    ).strip()
+    if target_col == "":
+        target_col = target_default
+    if target_col not in corr.columns:
+        print(f"Target '{target_col}' not found. Continuing without target-based ranking.")
+
+    def read_float(prompt, default):
+        raw = input(f"{prompt} [default: {default}]: ").strip()
+        if raw == "":
+            return float(default)
+        try:
+            return float(raw.replace(",", "."))
+        except Exception:
+            print(f"Invalid value '{raw}'. Using default {default}.")
+            return float(default)
+
+    def read_int(prompt, default):
+        raw = input(f"{prompt} [default: {default}]: ").strip()
+        if raw == "":
+            return int(default)
+        try:
+            return int(raw)
+        except Exception:
+            print(f"Invalid value '{raw}'. Using default {default}.")
+            return int(default)
+
+    min_target = read_float("Min abs corr with target to keep", 0.05)
+    max_pair = read_float("Pairwise collinearity threshold", 0.90)
+    top_pairs = read_int("Top correlated pairs to print", 20)
+
+    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+    pairs = []
+    for row in upper.index:
+        for col in upper.columns:
+            val = upper.loc[row, col]
+            if pd.notna(val) and abs(val) >= max_pair:
+                pairs.append((row, col, float(val)))
+    pairs.sort(key=lambda x: abs(x[2]), reverse=True)
+
+    target_corr = None
+    low_target = []
+    if target_col in corr.columns:
+        target_corr = corr[target_col].drop(labels=[target_col]).abs().sort_values()
+        low_target = target_corr[target_corr < min_target].index.tolist()
+
+    collinear_drop = []
+    for a, b, _ in pairs:
+        if target_corr is not None:
+            a_score = abs(corr.loc[a, target_col]) if a in corr.index else 0
+            b_score = abs(corr.loc[b, target_col]) if b in corr.index else 0
+            drop = a if a_score < b_score else b
+        else:
+            drop = b
+        collinear_drop.append(drop)
+
+    suggested = sorted(set(low_target + collinear_drop))
+
+    if target_corr is not None:
+        print(f"\nCorrelation with target '{target_col}' (abs sorted):")
+        print(target_corr.sort_values(ascending=False))
+    else:
+        print(f"\nTarget '{target_col}' not found in numeric columns.")
+
+    print(f"\nTop correlated pairs (abs >= {max_pair}):")
+    if pairs:
+        for a, b, v in pairs[:top_pairs]:
+            print(f"{a} <-> {b}: {v:+.3f}")
+    else:
+        print("No pairs above threshold.")
+
+    print(f"\nLow correlation with target (abs < {min_target}):")
+    print(low_target if low_target else "None")
+
+    print(f"\nSuggested drops due to collinearity (>= {max_pair}):")
+    print(sorted(set(collinear_drop)) if collinear_drop else "None")
+
+    manual = input("\nManual exclusions (comma-separated, optional): ").strip()
+    manual_exclude = [c.strip() for c in manual.split(",") if c.strip()]
+    final_exclude = sorted(set(suggested + manual_exclude))
+
+    print("\nSuggested exclusions (combined):")
+    print(final_exclude if final_exclude else "None")
+
+    write_filtered = input(
+        "Write filtered CSV? Enter path or press Enter to skip: "
+    ).strip()
+    if write_filtered:
+        keep_cols = [c for c in df.columns if c not in final_exclude]
+        df_filtered = df[keep_cols].copy()
+        out_dir = os.path.dirname(write_filtered)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        df_filtered.to_csv(write_filtered, index=False)
+        print(f"Filtered CSV written to: {write_filtered}")
+
+    try:
+        sns = import_optional("seaborn", "seaborn")
+        plt = import_optional("matplotlib.pyplot", "matplotlib", check_import="matplotlib")
+    except Exception as exc:
+        print(str(exc))
+        print("Install seaborn/matplotlib to generate the heatmap image.")
+        return
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr, cmap="coolwarm", center=0, square=True)
+    plt.tight_layout()
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"\nPearson heatmap saved to: {out_path}")
+
+
 # =========================
 # Manual insert helpers (from utilities/insert_deviation_manual.py)
 # =========================
@@ -1232,7 +1448,7 @@ def global_explanation(db_path=None, outputs_dir=None):
         n=min(200, len(X_num)),
         random_state=42,
     )
-    explainer = shap.Explainer(model, background)
+    explainer = shap.Explainer(model.predict, background)
     shap_values = explainer(sample)
 
     plt.figure(figsize=(10, 6))
@@ -1312,7 +1528,7 @@ def local_explanation(db_path=None, outputs_dir=None):
         n=min(200, len(X_num)),
         random_state=42,
     )
-    explainer = shap.Explainer(model, background)
+    explainer = shap.Explainer(model.predict, background)
     row_data = X_num.iloc[[row_idx]]
     shap_values = explainer(row_data)
 
@@ -1571,7 +1787,7 @@ def streamlit_app():
         X_row = pd.DataFrame([row_values], columns=NUM_COLS)
         X_row_num = transform_features(imputer, X_row)
 
-        explainer = shap.Explainer(model, background)
+        explainer = shap.Explainer(model.predict, background)
         shap_values = explainer(X_row_num)
 
         vals = shap_values.values[0]
@@ -2032,28 +2248,39 @@ def run_streamlit():
 MENU = {
     "1": ("Import history", import_history),
     "2": ("Verify database", verify_database),
-    "3": ("Data quality report", lambda: data_quality_report(load_data())),
-    "4": ("Local explanation", local_explanation),
-    "5": ("Global explanation", global_explanation),
-    "6": ("What-if simulation", what_if_simulation),
-    "7": ("Manual insert", insert_deviation_manual),
-    "8": ("Verify inserts", verify_inserts),
-    "9": ("Delete last record", delete_last_record),
-    "10": ("Web interface (Streamlit)", run_streamlit),
-    "11": ("List variables (CSV)", list_variables),
-    "12": ("Prepare ML data", prepare_ml_data),
-    "13": ("Train baseline model", train_baseline_model),
-    "14": ("Create table (legacy)", create_table),
+    "3": ("Verify inserts", verify_inserts),
+    "4": ("Manual insert", insert_deviation_manual),
+    "5": ("Data quality report", lambda: data_quality_report(load_data())),
+    "6": ("List variables (CSV)", list_variables),
+    "7": ("Pearson heatmap (CSV/DB)", pearson_heatmap_analysis),
+    "8": ("Prepare ML data", prepare_ml_data),
+    "9": ("Train baseline model", train_baseline_model),
+    "10": ("Local explanation", local_explanation),
+    "11": ("Global explanation", global_explanation),
+    "12": ("What-if simulation", what_if_simulation),
+    "13": ("Web interface (Streamlit)", run_streamlit),
+    "14": ("Delete last record", delete_last_record),
     "0": ("Exit", None),
 }
+
+MENU_GROUPS = [
+    ("Data Input & Validation", ["1", "2", "3", "4"]),
+    ("Pre-Model Analysis", ["5", "6", "7", "8"]),
+    ("Model Training", ["9"]),
+    ("Final Analysis & Simulation", ["10", "11", "12", "13"]),
+    ("Maintenance", ["14", "0"]),
+]
 
 
 def run_menu():
     while True:
         print("\nML-Sal Menu")
         print("=" * 40)
-        for key, (label, _) in MENU.items():
-            print(f"{key}. {label}")
+        for group_name, keys in MENU_GROUPS:
+            print(f"\n{group_name}")
+            for key in keys:
+                label, _ = MENU[key]
+                print(f"{key}. {label}")
 
         choice = input("\nChoose an option: ").strip()
         if choice not in MENU:

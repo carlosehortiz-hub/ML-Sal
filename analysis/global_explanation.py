@@ -39,7 +39,7 @@ background = X_num.sample(
     n=min(200, len(X_num)),
     random_state=42,
 )
-explainer = shap.Explainer(model, background)
+explainer = shap.Explainer(model.predict, background)
 shap_values = explainer(sample)
 
 plt.figure(figsize=(10, 6))

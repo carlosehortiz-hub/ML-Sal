@@ -49,7 +49,7 @@ def build_impact_df(model, imputer, row_values, background):
     X_row = pd.DataFrame([row_values], columns=NUM_COLS)
     X_row_num = transform_features(imputer, X_row)
 
-    explainer = shap.Explainer(model, background)
+    explainer = shap.Explainer(model.predict, background)
     shap_values = explainer(X_row_num)
 
     vals = shap_values.values[0]
