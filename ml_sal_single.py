@@ -421,6 +421,43 @@ def data_quality_report(df):
         print("OK: no IQR outliers detected.")
 
 
+def _sample_rows(df_like, max_rows, random_state=42):
+    if hasattr(df_like, "sample"):
+        n = min(max_rows, len(df_like))
+        return df_like.sample(n=n, random_state=random_state)
+    return df_like[:max_rows]
+
+
+def compute_shap_values(shap_module, model, background, X_eval, nsamples=200):
+    feature_cols = list(background.columns) if hasattr(background, "columns") else None
+
+    def predict_fn(data):
+        data_in = data
+        if feature_cols is not None and not hasattr(data_in, "columns"):
+            data_in = pd.DataFrame(data_in, columns=feature_cols)
+        return model.predict(data_in)
+
+    try:
+        explainer = shap_module.Explainer(predict_fn, background)
+        shap_values = explainer(X_eval)
+        values = getattr(shap_values, "values", shap_values)
+        return np.asarray(values), "explainer"
+    except Exception as explainer_error:
+        bg_small = _sample_rows(background, 80)
+        try:
+            kernel = shap_module.KernelExplainer(predict_fn, bg_small)
+            values = kernel.shap_values(X_eval, nsamples=nsamples)
+            if isinstance(values, list):
+                values = values[0]
+            return np.asarray(values), "kernel"
+        except Exception as kernel_error:
+            raise RuntimeError(
+                "SHAP failed in both modes. "
+                f"Explainer error: {explainer_error} | "
+                f"KernelExplainer error: {kernel_error}"
+            )
+
+
 # =========================
 # Database and utilities
 # =========================
@@ -1448,16 +1485,17 @@ def global_explanation(db_path=None, outputs_dir=None):
         n=min(200, len(X_num)),
         random_state=42,
     )
-    explainer = shap.Explainer(model.predict, background)
-    shap_values = explainer(sample)
+    shap_values, shap_mode = compute_shap_values(
+        shap,
+        model,
+        background,
+        sample,
+    )
+    if shap_mode != "explainer":
+        print("Using SHAP compatibility mode (KernelExplainer).")
 
     plt.figure(figsize=(10, 6))
-    shap.summary_plot(
-        shap_values,
-        sample,
-        plot_type="bar",
-        show=False,
-    )
+    shap.summary_plot(shap_values, sample, plot_type="bar", show=False)
 
     plt.tight_layout()
     os.makedirs(outputs_dir, exist_ok=True)
@@ -1528,11 +1566,18 @@ def local_explanation(db_path=None, outputs_dir=None):
         n=min(200, len(X_num)),
         random_state=42,
     )
-    explainer = shap.Explainer(model.predict, background)
     row_data = X_num.iloc[[row_idx]]
-    shap_values = explainer(row_data)
+    shap_values, shap_mode = compute_shap_values(
+        shap,
+        model,
+        background,
+        row_data,
+        nsamples=300,
+    )
+    if shap_mode != "explainer":
+        print("Using SHAP compatibility mode (KernelExplainer).")
 
-    vals = shap_values.values[0]
+    vals = shap_values[0]
     abs_vals = np.abs(vals)
     total = abs_vals.sum()
     percent = abs_vals / total * 100
@@ -1787,10 +1832,17 @@ def streamlit_app():
         X_row = pd.DataFrame([row_values], columns=NUM_COLS)
         X_row_num = transform_features(imputer, X_row)
 
-        explainer = shap.Explainer(model.predict, background)
-        shap_values = explainer(X_row_num)
+        shap_values, shap_mode = compute_shap_values(
+            shap,
+            model,
+            background,
+            X_row_num,
+            nsamples=300,
+        )
+        if shap_mode != "explainer":
+            st.info("Using SHAP compatibility mode (KernelExplainer).")
 
-        vals = shap_values.values[0]
+        vals = shap_values[0]
         abs_vals = np.abs(vals)
         total = abs_vals.sum() if abs_vals.sum() != 0 else 1.0
         percent = abs_vals / total * 100

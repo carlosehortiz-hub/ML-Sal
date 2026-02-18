@@ -21,6 +21,36 @@ from ml.ml_utils import (
     DEVIATION_COL,
 )
 
+
+def _sample_rows(df_like, max_rows, random_state=42):
+    if hasattr(df_like, "sample"):
+        n = min(max_rows, len(df_like))
+        return df_like.sample(n=n, random_state=random_state)
+    return df_like[:max_rows]
+
+
+def compute_shap_values(model, background, X_eval, nsamples=200):
+    feature_cols = list(background.columns) if hasattr(background, "columns") else None
+
+    def predict_fn(data):
+        data_in = data
+        if feature_cols is not None and not hasattr(data_in, "columns"):
+            data_in = pd.DataFrame(data_in, columns=feature_cols)
+        return model.predict(data_in)
+
+    try:
+        explainer = shap.Explainer(predict_fn, background)
+        shap_values = explainer(X_eval)
+        values = getattr(shap_values, "values", shap_values)
+        return np.asarray(values), "explainer"
+    except Exception:
+        bg_small = _sample_rows(background, 80)
+        kernel = shap.KernelExplainer(predict_fn, bg_small)
+        values = kernel.shap_values(X_eval, nsamples=nsamples)
+        if isinstance(values, list):
+            values = values[0]
+        return np.asarray(values), "kernel"
+
 # ======================================================
 # 1. Read data
 # ======================================================
@@ -94,11 +124,17 @@ background = X_num.sample(
     n=min(200, len(X_num)),
     random_state=42,
 )
-explainer = shap.Explainer(model.predict, background)
 row_data = X_num.iloc[[row_idx]]
-shap_values = explainer(row_data)
+shap_values, shap_mode = compute_shap_values(
+    model,
+    background,
+    row_data,
+    nsamples=300,
+)
+if shap_mode != "explainer":
+    print("ℹ️ Using SHAP compatibility mode (KernelExplainer).")
 
-vals = shap_values.values[0]
+vals = shap_values[0]
 abs_vals = np.abs(vals)
 
 total = abs_vals.sum()
