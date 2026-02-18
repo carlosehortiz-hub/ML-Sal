@@ -174,7 +174,24 @@ Notes:
 		•	ML_SAL_CSV_PATH
 		•	ML_SAL_OUTPUTS_DIR
 		•	ML_SAL_MODELS_DIR
+		•	ML_SAL_MODEL (optional default model for auto-training, e.g. Ridge)
 	•	If you only have the .db file, avoid the "Import history" option
+	•	When no model exists yet, auto-training is triggered and:
+		•	in terminal mode, the script can ask which model to train/save
+		•	in non-interactive mode, it uses ML_SAL_MODEL or RandomForest
+	•	Menu option "Pearson heatmap (CSV/DB)" supports both sources:
+		•	use DB when you do not want to carry matriz_cloretos.csv
+		•	heatmap image is saved to outputs/pearson_heatmap.png by default
+	•	SHAP explanation has a compatibility fallback (KernelExplainer) for environments
+	  where Exact/Numba paths fail (for example some Python 3.14 stacks)
+
+⸻
+
+📈 Training behavior updates
+	•	Current model features exclude ph_salga
+	•	Rows with densidade = 0 are excluded from training/evaluation
+	•	At the end of training, the script prints the most precise model
+	  (holdout and cross-validation) before asking which model to save
 
 ⸻
 
