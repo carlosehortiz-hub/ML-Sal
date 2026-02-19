@@ -11,6 +11,7 @@ Optional environment variables:
   - ML_SAL_OUTPUTS_DIR
   - ML_SAL_MODELS_DIR
   - ML_SAL_MODEL (model name for non-interactive training)
+  - ML_SAL_REFERENCIAS (optional training scope, e.g. REF_A,REF_B or all)
   - ML_SAL_AUTO_INSTALL (default 1; set to 0 to disable auto-install)
   - ML_SAL_PIP_ARGS (extra arguments passed to pip)
 """
@@ -20,6 +21,8 @@ import sys
 import sqlite3
 import subprocess
 import importlib
+import warnings
+import re
 from datetime import datetime
 
 pd = None
@@ -60,9 +63,129 @@ DROP_COLS = [
     "dif_pct_sal",
 ]
 
+UNIQUE_KEY_COLS = ["lote", "referencia", "cuba"]
+UNIQUE_INDEX_NAME = "ux_desvios_sal_lote_ref_cuba"
+
 
 def _resolve_path(path, default):
     return default if path is None else path
+
+
+def _normalize_unique_key_columns(df):
+    df = df.copy()
+    for col in UNIQUE_KEY_COLS:
+        if col not in df.columns:
+            continue
+        if col == "cuba":
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+        else:
+            df[col] = df[col].astype(str).str.strip()
+            df[col] = df[col].replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+    return df
+
+
+def _ensure_unique_key_index(cursor):
+    try:
+        cursor.execute(
+            f"""
+            CREATE UNIQUE INDEX IF NOT EXISTS {UNIQUE_INDEX_NAME}
+            ON desvios_sal (lote, referencia, cuba)
+            """
+        )
+    except sqlite3.IntegrityError:
+        # Keep execution running if legacy duplicates exist in an old DB.
+        pass
+
+
+def _normalize_db_column_name(name):
+    cleaned = str(name).strip().lower()
+    cleaned = cleaned.replace("%", "pct")
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    cleaned = re.sub(r"[^a-z0-9_]", "_", cleaned)
+    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
+    if not cleaned:
+        cleaned = "col"
+    if cleaned[0].isdigit():
+        cleaned = f"c_{cleaned}"
+    return cleaned
+
+
+def _normalize_columns_unique(df):
+    rename_map = {}
+    used = set()
+    for col in df.columns:
+        base = _normalize_db_column_name(col)
+        final = base
+        idx = 2
+        while final in used:
+            final = f"{base}_{idx}"
+            idx += 1
+        rename_map[col] = final
+        used.add(final)
+    return df.rename(columns=rename_map)
+
+
+def _infer_sql_type_from_series(series):
+    if series.dropna().empty:
+        return "REAL"
+
+    if pd.api.types.is_numeric_dtype(series):
+        non_na = series.dropna()
+        if (non_na % 1 == 0).all():
+            return "INTEGER"
+        return "REAL"
+
+    as_text = series.astype(str).str.strip()
+    as_text = as_text.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+    numeric = pd.to_numeric(
+        as_text.str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
+
+    n_non_na = int(as_text.notna().sum())
+    n_num = int(numeric.notna().sum())
+    if n_non_na > 0 and n_num == n_non_na:
+        if (numeric.dropna() % 1 == 0).all():
+            return "INTEGER"
+        return "REAL"
+    return "TEXT"
+
+
+def _prepare_series_for_sql(series, sql_type):
+    if sql_type in {"INTEGER", "REAL"}:
+        prepared = pd.to_numeric(
+            series.astype(str).str.replace(",", ".", regex=False),
+            errors="coerce",
+        )
+        if sql_type == "INTEGER":
+            return prepared.astype("Int64")
+        return prepared.astype(float)
+
+    prepared = series.astype(str).str.strip()
+    prepared = prepared.replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+    return prepared
+
+
+def _has_db_value(value):
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip() != ""
+    return True
+
+
+def _values_differ(a, b):
+    if a is None and b is None:
+        return False
+    if a is None or b is None:
+        return True
+
+    try:
+        if float(a) == float(b):
+            return False
+    except Exception:
+        pass
+    return str(a) != str(b)
 
 
 _CORE_PACKAGES = [
@@ -431,25 +554,54 @@ def _sample_rows(df_like, max_rows, random_state=42):
 def compute_shap_values(shap_module, model, background, X_eval, nsamples=200):
     feature_cols = list(background.columns) if hasattr(background, "columns") else None
 
+    def _safe_predict(data_in):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with np.errstate(all="ignore"):
+                preds = model.predict(data_in)
+
+        preds = np.asarray(preds, dtype=float).reshape(-1)
+        if np.isfinite(preds).all():
+            return preds
+
+        finite = preds[np.isfinite(preds)]
+        if finite.size == 0:
+            raise ValueError("Model returned only non-finite predictions.")
+
+        # Keep SHAP running by replacing rare unstable outputs with a robust value.
+        fill_value = float(np.median(finite))
+        return np.where(np.isfinite(preds), preds, fill_value)
+
     def predict_fn(data):
         data_in = data
         if feature_cols is not None and not hasattr(data_in, "columns"):
             data_in = pd.DataFrame(data_in, columns=feature_cols)
-        return model.predict(data_in)
+        return _safe_predict(data_in)
 
     try:
-        explainer = shap_module.Explainer(predict_fn, background)
-        shap_values = explainer(X_eval)
-        values = getattr(shap_values, "values", shap_values)
-        return np.asarray(values), "explainer"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with np.errstate(all="ignore"):
+                explainer = shap_module.Explainer(predict_fn, background)
+                shap_values = explainer(X_eval)
+        values = np.asarray(getattr(shap_values, "values", shap_values), dtype=float)
+        if not np.isfinite(values).all():
+            raise ValueError("Explainer produced non-finite SHAP values.")
+        return values, "explainer"
     except Exception as explainer_error:
         bg_small = _sample_rows(background, 80)
         try:
-            kernel = shap_module.KernelExplainer(predict_fn, bg_small)
-            values = kernel.shap_values(X_eval, nsamples=nsamples)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                with np.errstate(all="ignore"):
+                    kernel = shap_module.KernelExplainer(predict_fn, bg_small)
+                    values = kernel.shap_values(X_eval, nsamples=nsamples)
             if isinstance(values, list):
                 values = values[0]
-            return np.asarray(values), "kernel"
+            values = np.asarray(values, dtype=float)
+            if not np.isfinite(values).all():
+                raise ValueError("KernelExplainer produced non-finite SHAP values.")
+            return values, "kernel"
         except Exception as kernel_error:
             raise RuntimeError(
                 "SHAP failed in both modes. "
@@ -547,6 +699,7 @@ def import_history(csv_path=None, db_path=None):
         )
         """
     )
+    _ensure_unique_key_index(cursor)
     conn.commit()
 
     df_final = df.rename(columns={
@@ -555,18 +708,214 @@ def import_history(csv_path=None, db_path=None):
         "temperatura_salga": "temperatura",
     })
 
-    df_final.to_sql(
-        "desvios_sal",
+    missing_key_cols = [c for c in UNIQUE_KEY_COLS if c not in df_final.columns]
+    if missing_key_cols:
+        conn.close()
+        raise ValueError(
+            f"CSV is missing required key columns for uniqueness check: {missing_key_cols}"
+        )
+
+    df_final = _normalize_unique_key_columns(df_final)
+    invalid_key_rows = int(df_final[UNIQUE_KEY_COLS].isna().any(axis=1).sum())
+    if invalid_key_rows > 0:
+        df_final = df_final[~df_final[UNIQUE_KEY_COLS].isna().any(axis=1)].copy()
+
+    before_internal = len(df_final)
+    df_final = df_final.drop_duplicates(subset=UNIQUE_KEY_COLS, keep="last")
+    skipped_internal = before_internal - len(df_final)
+
+    existing_keys = pd.read_sql(
+        "SELECT lote, referencia, cuba FROM desvios_sal",
         conn,
-        if_exists="append",
-        index=False,
     )
+    existing_keys = _normalize_unique_key_columns(existing_keys)
+    existing_keys = existing_keys.drop_duplicates(subset=UNIQUE_KEY_COLS)
+    existing_keys["_exists"] = 1
+
+    merged = df_final.merge(existing_keys, on=UNIQUE_KEY_COLS, how="left")
+    skipped_existing = int((merged["_exists"] == 1).sum())
+    df_to_insert = merged[merged["_exists"].isna()].drop(columns=["_exists"])
+
+    inserted_rows = len(df_to_insert)
+    if inserted_rows > 0:
+        df_to_insert.to_sql(
+            "desvios_sal",
+            conn,
+            if_exists="append",
+            index=False,
+        )
     conn.close()
 
     print("History imported successfully.")
-    print(f"Total rows imported: {len(df_final)}")
+    print(f"Rows inserted: {inserted_rows}")
+    print(f"Rows skipped (invalid key): {invalid_key_rows}")
+    print(f"Rows skipped (duplicate in file): {skipped_internal}")
+    print(f"Rows skipped (already in DB): {skipped_existing}")
     print("\nMissing values by column:")
-    print(df_final.isna().sum())
+    if inserted_rows > 0:
+        print(df_to_insert.isna().sum())
+    else:
+        print("No new rows inserted.")
+
+
+def import_variables_from_csv(csv_path=None, db_path=None):
+    ensure_core_dependencies()
+    db_path = _resolve_path(db_path, DEFAULT_DB_PATH)
+
+    default_csv = csv_path if csv_path else os.path.join(BASE_DIR, "novas_variaveis.csv")
+    chosen = input(
+        f"CSV file with extra variables [Enter={default_csv}]: "
+    ).strip()
+    csv_path = _resolve_path(chosen or default_csv, default_csv)
+
+    env_overwrite = os.environ.get("ML_SAL_IMPORT_OVERWRITE", "").strip().lower()
+    if env_overwrite in {"1", "true", "yes", "y", "sim", "s"}:
+        overwrite_existing = True
+    elif env_overwrite in {"0", "false", "no", "n", "nao", "não"}:
+        overwrite_existing = False
+    else:
+        overwrite_raw = input(
+            "Overwrite existing values already present in DB? (y/N): "
+        ).strip().lower()
+        overwrite_existing = overwrite_raw in {"y", "yes", "1", "sim", "s"}
+
+    mode_label = "overwrite enabled" if overwrite_existing else "fill only empty fields"
+    print(f"Import mode: {mode_label}")
+
+    if not os.path.exists(csv_path):
+        print(f"CSV not found: {csv_path}")
+        return
+
+    df = pd.read_csv(csv_path, sep=None, engine="python")
+    if df.empty:
+        print("CSV is empty.")
+        return
+
+    df = _normalize_columns_unique(df)
+    missing = [c for c in UNIQUE_KEY_COLS if c not in df.columns]
+    if missing:
+        print(
+            "CSV must include key columns: lote, referencia, cuba "
+            f"(missing: {missing})"
+        )
+        return
+
+    df = _normalize_unique_key_columns(df)
+    invalid_key_rows = int(df[UNIQUE_KEY_COLS].isna().any(axis=1).sum())
+    if invalid_key_rows > 0:
+        df = df[~df[UNIQUE_KEY_COLS].isna().any(axis=1)].copy()
+
+    before_internal = len(df)
+    df = df.drop_duplicates(subset=UNIQUE_KEY_COLS, keep="last")
+    skipped_internal = before_internal - len(df)
+
+    value_cols = [c for c in df.columns if c not in UNIQUE_KEY_COLS]
+    if not value_cols:
+        print("No extra variables found in CSV.")
+        return
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    _ensure_unique_key_index(cursor)
+    table_cols = {
+        row[1] for row in cursor.execute("PRAGMA table_info(desvios_sal)").fetchall()
+    }
+    if not table_cols:
+        conn.close()
+        print("Table 'desvios_sal' not found. Run import/create table first.")
+        return
+
+    added_cols = []
+    sql_types = {}
+    for col in value_cols:
+        sql_type = _infer_sql_type_from_series(df[col])
+        sql_types[col] = sql_type
+        if col not in table_cols:
+            cursor.execute(f'ALTER TABLE desvios_sal ADD COLUMN "{col}" {sql_type}')
+            added_cols.append(f"{col} ({sql_type})")
+
+    for col in value_cols:
+        df[col] = _prepare_series_for_sql(df[col], sql_types[col])
+
+    updated_keys = 0
+    missing_keys = 0
+    unchanged_keys = 0
+    skipped_prefilled_cells = 0
+    overwritten_cells = 0
+    select_cols = ", ".join([f'"{c}"' for c in value_cols])
+    select_sql = (
+        f"SELECT id, {select_cols} FROM desvios_sal "
+        "WHERE lote = ? AND referencia = ? AND cuba = ? "
+        "LIMIT 1"
+    )
+    for _, row in df.iterrows():
+        key_values = [row["lote"], row["referencia"], int(row["cuba"])]
+        cursor.execute(select_sql, key_values)
+        existing_row = cursor.fetchone()
+        if existing_row is None:
+            missing_keys += 1
+            continue
+
+        row_id = existing_row[0]
+        existing_by_col = {
+            col: existing_row[idx + 1]
+            for idx, col in enumerate(value_cols)
+        }
+
+        cols_to_update = []
+        update_values = []
+        for col in value_cols:
+            incoming = row[col]
+            if pd.isna(incoming):
+                continue
+            existing_value = existing_by_col[col]
+            existing_has_value = _has_db_value(existing_value)
+
+            if existing_has_value and not overwrite_existing:
+                skipped_prefilled_cells += 1
+                continue
+
+            if hasattr(incoming, "item"):
+                incoming = incoming.item()
+
+            if existing_has_value and overwrite_existing:
+                if _values_differ(existing_value, incoming):
+                    overwritten_cells += 1
+                else:
+                    continue
+
+            cols_to_update.append(col)
+            update_values.append(incoming)
+
+        if not cols_to_update:
+            unchanged_keys += 1
+            continue
+
+        set_clause = ", ".join([f'"{c}" = ?' for c in cols_to_update])
+        cursor.execute(
+            f"UPDATE desvios_sal SET {set_clause} WHERE id = ?",
+            update_values + [row_id],
+        )
+        updated_keys += 1
+
+    conn.commit()
+    conn.close()
+
+    print("Extra variables import completed.")
+    print(f"Rows read from CSV: {before_internal + invalid_key_rows}")
+    print(f"Rows skipped (invalid key): {invalid_key_rows}")
+    print(f"Rows skipped (duplicate key in CSV): {skipped_internal}")
+    print(f"Rows updated in DB: {updated_keys}")
+    print(f"Rows with key not found in DB: {missing_keys}")
+    print(f"Rows not changed (already filled / no new values): {unchanged_keys}")
+    print(f"Cells skipped (already had value): {skipped_prefilled_cells}")
+    print(f"Cells overwritten (previous value replaced): {overwritten_cells}")
+    if added_cols:
+        print("New columns created:")
+        for item in added_cols:
+            print(f"- {item}")
+    else:
+        print("No new columns were created (all already existed).")
 
 
 def verify_database(db_path=None):
@@ -664,16 +1013,21 @@ def create_table(db_path=None):
             referencia TEXT,
             cuba INTEGER,
             lote TEXT,
-            dif_pct_sal REAL,
             pct_sal REAL,
-            ph_entrada REAL,
+            dif_pct_sal REAL,
+            dif_es REAL,
+            dif_hfd REAL,
+            dif_gs REAL,
+            ph_entrada INTEGER,
             ph_salga REAL,
             densidade REAL,
             temperatura REAL,
-            observacoes TEXT
+            min_fora REAL,
+            tempo_fora_espec INTEGER
         );
         """
     )
+    _ensure_unique_key_index(cursor)
     conn.commit()
     conn.close()
     print("Table 'desvios_sal' created successfully.")
@@ -1052,6 +1406,7 @@ def insert_deviation_manual(db_path=None):
     db_path = _resolve_path(db_path, DEFAULT_DB_PATH)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    _ensure_unique_key_index(cursor)
 
     print("\nMANUAL INSERT OF NEW DEVIATION")
     print("=" * 60)
@@ -1110,6 +1465,23 @@ def insert_deviation_manual(db_path=None):
     print(f"Temperature        : {temperatura}")
     print(f"Minutes out        : {min_fora}")
     print(f"Time out spec      : {tempo_fora_espec}")
+
+    cursor.execute(
+        """
+        SELECT id, data
+        FROM desvios_sal
+        WHERE lote = ? AND referencia = ? AND cuba = ?
+        LIMIT 1
+        """,
+        (lote, referencia, cuba),
+    )
+    existing = cursor.fetchone()
+    if existing is not None:
+        print("\nA record with the same (batch, reference, vat) already exists:")
+        print(f"- Existing ID: {existing[0]} | Date: {existing[1]}")
+        print("Insertion canceled to protect uniqueness.")
+        conn.close()
+        return
 
     confirmar = input("\nConfirm insertion? (y/n): ")
     if confirmar is None or confirmar.strip().lower() != "y":
@@ -1183,8 +1555,125 @@ def train_baseline_model(db_path=None):
     from sklearn.pipeline import make_pipeline
     from sklearn.model_selection import KFold, cross_validate
     from sklearn.base import clone
+    from sklearn.exceptions import UndefinedMetricWarning
 
     df = load_data(db_path)
+
+    def _available_refs(df_in):
+        if "referencia" not in df_in.columns:
+            return []
+        refs = []
+        for value in df_in["referencia"].dropna().tolist():
+            ref = str(value).strip()
+            if ref and ref not in refs:
+                refs.append(ref)
+        refs.sort()
+        return refs
+
+    def _reference_counts_for_training(df_in):
+        if "referencia" not in df_in.columns:
+            return {}
+        df_count = df_in.copy()
+        if "densidade" in df_count.columns:
+            df_count = df_count[df_count["densidade"] != 0]
+        refs_series = df_count["referencia"].dropna().astype(str).str.strip()
+        refs_series = refs_series[refs_series != ""]
+        return refs_series.value_counts().to_dict()
+
+    def _parse_refs_input(raw, refs):
+        raw = (raw or "").strip()
+        if raw == "":
+            return None, "no references provided"
+
+        for ref in refs:
+            if ref.lower() == raw.lower():
+                return [ref], None
+
+        delimiter = ";" if ";" in raw else ","
+        tokens = [t.strip() for t in raw.split(delimiter) if t.strip()]
+        if not tokens:
+            return None, "no references provided"
+
+        chosen = []
+        for token in tokens:
+            selected = None
+            if token.isdigit():
+                idx = int(token)
+                if 1 <= idx <= len(refs):
+                    selected = refs[idx - 1]
+                else:
+                    return None, f"index out of range: {token}"
+            else:
+                for ref in refs:
+                    if ref.lower() == token.lower():
+                        selected = ref
+                        break
+                if selected is None:
+                    return None, f"unknown reference: {token}"
+
+            if selected not in chosen:
+                chosen.append(selected)
+
+        return chosen, None
+
+    selected_refs = []
+    refs = _available_refs(df)
+    ref_counts = _reference_counts_for_training(df)
+    total_count = int(sum(ref_counts.values()))
+    env_refs = os.environ.get("ML_SAL_REFERENCIAS", "").strip()
+
+    if env_refs and refs:
+        if env_refs.lower() not in {"all", "*"}:
+            parsed, err = _parse_refs_input(env_refs, refs)
+            if err:
+                print(f"Invalid ML_SAL_REFERENCIAS: {err}")
+                return
+            selected_refs = parsed
+    elif refs:
+        print("\nTraining scope by reference")
+        print(f"1. All references (default, n={total_count})")
+        print("2. One reference")
+        print("3. Multiple references")
+        while True:
+            scope = input("Choice [1-3, default 1]: ").strip()
+            if scope in {"", "1"}:
+                break
+            if scope == "2":
+                print("\nAvailable references:")
+                for idx, ref in enumerate(refs, start=1):
+                    print(f"{idx}. {ref} (n={ref_counts.get(ref, 0)})")
+                raw = input("Reference (name or number): ").strip()
+                parsed, err = _parse_refs_input(raw, refs)
+                if err:
+                    print(f"Invalid selection: {err}")
+                    continue
+                selected_refs = [parsed[0]]
+                break
+            if scope == "3":
+                print("\nAvailable references:")
+                for idx, ref in enumerate(refs, start=1):
+                    print(f"{idx}. {ref} (n={ref_counts.get(ref, 0)})")
+                raw = input(
+                    "References (numbers comma-separated, or names semicolon-separated): "
+                ).strip()
+                parsed, err = _parse_refs_input(raw, refs)
+                if err:
+                    print(f"Invalid selection: {err}")
+                    continue
+                selected_refs = parsed
+                break
+            print("Invalid option.")
+
+    if selected_refs:
+        df = df[df["referencia"].astype(str).str.strip().isin(selected_refs)].reset_index(drop=True)
+        print(f"Training scope: {len(selected_refs)} reference(s): {', '.join(selected_refs)}")
+    else:
+        print("Training scope: all references.")
+
+    if df.empty:
+        print("No rows available after reference filter.")
+        return
+
     X, y = build_features(df)
     X, y, removed_rows = filter_training_rows(X, y)
     if removed_rows > 0:
@@ -1201,6 +1690,15 @@ def train_baseline_model(db_path=None):
         columns=NUM_COLS,
     )
 
+    n_samples = len(X_final)
+    poly_min_samples = int(os.environ.get("ML_SAL_MIN_SAMPLES_POLY", "120"))
+    use_poly_models = n_samples >= poly_min_samples
+    if not use_poly_models:
+        print(
+            f"Polynomial models disabled (n={n_samples} < {poly_min_samples}) "
+            "to avoid numeric instability."
+        )
+
     X_train, X_test, y_train, y_test = train_test_split(
         X_final,
         y,
@@ -1216,7 +1714,12 @@ def train_baseline_model(db_path=None):
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
 
-    r2 = r2_score(y_test, y_pred)
+    if len(y_test) >= 2:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UndefinedMetricWarning)
+            r2 = r2_score(y_test, y_pred)
+    else:
+        r2 = float("nan")
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
     y_std = y_test.std()
     rmse_rel = rmse / y_std if y_std != 0 else float("nan")
@@ -1227,27 +1730,32 @@ def train_baseline_model(db_path=None):
     print(f"RMSE/STD(y) = {rmse_rel:.3f}")
 
     def evaluate_model(name, estimator, X_tr, y_tr, X_te, y_te, y_std_value):
-        estimator.fit(X_tr, y_tr)
-        preds = estimator.predict(X_te)
-        r2_v = r2_score(y_te, preds)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
+            warnings.simplefilter("ignore", UndefinedMetricWarning)
+            with np.errstate(all="ignore"):
+                estimator.fit(X_tr, y_tr)
+                preds = estimator.predict(X_te)
+
+        if not np.isfinite(preds).all():
+            return None
+
+        if len(y_te) >= 2:
+            r2_v = r2_score(y_te, preds)
+        else:
+            r2_v = float("nan")
         rmse_v = np.sqrt(mean_squared_error(y_te, preds))
         rmse_rel_v = rmse_v / y_std_value if y_std_value != 0 else float("nan")
-        return (name, r2_v, rmse_v, rmse_rel_v)
+        runtime_warnings = sum(
+            1 for w in caught
+            if issubclass(w.category, RuntimeWarning)
+        )
+        return (name, r2_v, rmse_v, rmse_rel_v, runtime_warnings)
 
     models = [
         ("DummyMean", DummyRegressor(strategy="mean")),
         ("Linear", LinearRegression()),
         ("Ridge", make_pipeline(StandardScaler(), Ridge(alpha=1.0))),
-        ("Interactions_Ridge", make_pipeline(
-            PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
-            StandardScaler(),
-            Ridge(alpha=1.0),
-        )),
-        ("Poly2_Ridge", make_pipeline(
-            PolynomialFeatures(degree=2, include_bias=False),
-            StandardScaler(),
-            Ridge(alpha=1.0),
-        )),
         ("RandomForest", RandomForestRegressor(
             n_estimators=300,
             random_state=42,
@@ -1260,12 +1768,27 @@ def train_baseline_model(db_path=None):
         )),
         ("GradientBoosting", GradientBoostingRegressor(random_state=42)),
     ]
+    if use_poly_models:
+        models.insert(3, ("Interactions_Ridge", make_pipeline(
+            PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
+            StandardScaler(),
+            Ridge(alpha=1.0),
+        )))
+        models.insert(4, ("Poly2_Ridge", make_pipeline(
+            PolynomialFeatures(degree=2, include_bias=False),
+            StandardScaler(),
+            Ridge(alpha=1.0),
+        )))
 
     print("\nModel comparison (same train/test split)")
     split_metrics = []
     for name, est in models:
         m = evaluate_model(name, est, X_train, y_train, X_test, y_test, y_std)
-        print(f"{m[0]:<16} R2={m[1]:.3f}  RMSE={m[2]:.4f}  RMSE/STD={m[3]:.3f}")
+        if m is None:
+            print(f"{name:<16} skipped (non-finite predictions)")
+            continue
+        warn_note = "  [numeric warnings]" if m[4] > 0 else ""
+        print(f"{m[0]:<16} R2={m[1]:.3f}  RMSE={m[2]:.4f}  RMSE/STD={m[3]:.3f}{warn_note}")
         split_metrics.append({
             "name": m[0],
             "r2": m[1],
@@ -1274,30 +1797,62 @@ def train_baseline_model(db_path=None):
         })
 
     # Cross-validation (more stable estimate)
-    n_samples = len(X_final)
     if n_samples < 2:
         print("\nNot enough samples for cross-validation.")
         return
 
-    n_splits = 5 if n_samples >= 5 else 2
+    def _recommended_n_splits(n):
+        if n < 30:
+            return 2
+        if n < 80:
+            return 3
+        if n < 150:
+            return 4
+        return 5
+
+    n_splits = min(_recommended_n_splits(n_samples), n_samples)
+    n_splits = max(2, n_splits)
     cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    scoring = {"r2": "r2", "mse": "neg_mean_squared_error"}
+    include_cv_r2 = n_samples >= 4
+    scoring = {"mse": "neg_mean_squared_error"}
+    if include_cv_r2:
+        scoring["r2"] = "r2"
+    else:
+        print("R2 omitted in CV (too few samples per fold).")
     y_std_all = y.std()
     cv_metrics = []
 
     print(f"\nCross-validation (KFold, n_splits={n_splits})")
     for name, est in models:
-        cv_results = cross_validate(est, X_final, y, cv=cv, scoring=scoring)
-        r2_mean = cv_results["test_r2"].mean()
-        r2_std = cv_results["test_r2"].std()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
+            warnings.simplefilter("ignore", UndefinedMetricWarning)
+            with np.errstate(all="ignore"):
+                try:
+                    cv_results = cross_validate(est, X_final, y, cv=cv, scoring=scoring)
+                except Exception as exc:
+                    print(f"{name:<16} skipped in CV ({exc})")
+                    continue
+
+        if include_cv_r2:
+            r2_mean = cv_results["test_r2"].mean()
+            r2_std = cv_results["test_r2"].std()
+        else:
+            r2_mean = float("nan")
+            r2_std = float("nan")
         rmse_vals = np.sqrt(-cv_results["test_mse"])
         rmse_mean = rmse_vals.mean()
         rmse_std = rmse_vals.std()
         rmse_rel_mean = rmse_mean / y_std_all if y_std_all != 0 else float("nan")
+        runtime_warnings = sum(
+            1 for w in caught
+            if issubclass(w.category, RuntimeWarning)
+        )
+        warn_note = "  [numeric warnings]" if runtime_warnings > 0 else ""
         print(
             f"{name:<16} R2={r2_mean:.3f}±{r2_std:.3f}  "
             f"RMSE={rmse_mean:.4f}±{rmse_std:.4f}  "
-            f"RMSE/STD={rmse_rel_mean:.3f}"
+            f"RMSE/STD={rmse_rel_mean:.3f}{warn_note}"
         )
         cv_metrics.append({
             "name": name,
@@ -1309,33 +1864,40 @@ def train_baseline_model(db_path=None):
         })
 
     # Top interaction coefficients (Ridge with interactions)
-    print("\nTop interaction coefficients (Interactions_Ridge)")
-    interactions_model = make_pipeline(
-        PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
-        StandardScaler(),
-        Ridge(alpha=1.0),
-    )
-    interactions_model.fit(X_final, y)
-    poly = interactions_model.named_steps["polynomialfeatures"]
-    ridge = interactions_model.named_steps["ridge"]
+    if use_poly_models:
+        print("\nTop interaction coefficients (Interactions_Ridge)")
+        interactions_model = make_pipeline(
+            PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
+            StandardScaler(),
+            Ridge(alpha=1.0),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with np.errstate(all="ignore"):
+                interactions_model.fit(X_final, y)
+        poly = interactions_model.named_steps["polynomialfeatures"]
+        ridge = interactions_model.named_steps["ridge"]
 
-    try:
-        feature_names = poly.get_feature_names_out(NUM_COLS)
-    except AttributeError:
-        feature_names = poly.get_feature_names(NUM_COLS)
+        try:
+            feature_names = poly.get_feature_names_out(NUM_COLS)
+        except AttributeError:
+            feature_names = poly.get_feature_names(NUM_COLS)
 
-    coefs = ridge.coef_.ravel()
-    interaction_terms = []
-    for name, coef in zip(feature_names, coefs):
-        if " " in name:
-            interaction_terms.append((name.replace(" ", " * "), float(coef)))
+        coefs = ridge.coef_.ravel()
+        interaction_terms = []
+        for name, coef in zip(feature_names, coefs):
+            if " " in name:
+                interaction_terms.append((name.replace(" ", " * "), float(coef)))
 
-    interaction_terms.sort(key=lambda x: abs(x[1]), reverse=True)
-    if interaction_terms:
-        for name, coef in interaction_terms[:10]:
-            print(f"{name:<30} coef={coef:+.4f}")
+        interaction_terms.sort(key=lambda x: abs(x[1]), reverse=True)
+        if interaction_terms:
+            for name, coef in interaction_terms[:10]:
+                print(f"{name:<30} coef={coef:+.4f}")
+        else:
+            print("No interaction terms found.")
     else:
-        print("No interaction terms found.")
+        print("\nTop interaction coefficients (Interactions_Ridge)")
+        print("Skipped (polynomial models disabled for small sample size).")
 
     # Scatter + correlation per feature
     plt = import_optional("matplotlib.pyplot", "matplotlib", check_import="matplotlib")
@@ -1423,14 +1985,15 @@ def train_baseline_model(db_path=None):
 
     model_dict = {name: est for name, est in models if name != "DummyMean"}
     model_names = list(model_dict.keys())
+    if not split_metrics:
+        print("\nNo stable model metrics available to choose/save.")
+        return
     split_best = min(
         [m for m in split_metrics if m["name"] in model_dict],
         key=lambda m: m["rmse"],
     )
-    cv_best = min(
-        [m for m in cv_metrics if m["name"] in model_dict],
-        key=lambda m: m["rmse_mean"],
-    )
+    cv_candidates = [m for m in cv_metrics if m["name"] in model_dict]
+    cv_best = min(cv_candidates, key=lambda m: m["rmse_mean"]) if cv_candidates else None
 
     recommended_model = cv_best["name"] if cv_best is not None else split_best["name"]
     print("\nMost precise model")
@@ -2299,6 +2862,7 @@ def run_streamlit():
 
 MENU = {
     "1": ("Import history", import_history),
+    "15": ("Import extra variables from CSV (key: lote+referencia+cuba)", import_variables_from_csv),
     "2": ("Verify database", verify_database),
     "3": ("Verify inserts", verify_inserts),
     "4": ("Manual insert", insert_deviation_manual),
@@ -2316,7 +2880,7 @@ MENU = {
 }
 
 MENU_GROUPS = [
-    ("Data Input & Validation", ["1", "2", "3", "4"]),
+    ("Data Input & Validation", ["1", "15", "2", "3", "4"]),
     ("Pre-Model Analysis", ["5", "6", "7", "8"]),
     ("Model Training", ["9"]),
     ("Final Analysis & Simulation", ["10", "11", "12", "13"]),

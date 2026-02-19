@@ -1,5 +1,6 @@
 import os
 import sys
+import warnings
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -15,6 +16,7 @@ from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.base import clone
+from sklearn.exceptions import UndefinedMetricWarning
 
 # Ensure project root is on sys.path when running from subdirectories.
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -38,6 +40,125 @@ from ml.ml_utils import (
 df = load_data()
 if df.empty:
     print("❌ No data available in the database.")
+    raise SystemExit(1)
+
+
+def _available_refs(df_in):
+    if "referencia" not in df_in.columns:
+        return []
+    refs = []
+    for value in df_in["referencia"].dropna().tolist():
+        ref = str(value).strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    refs.sort()
+    return refs
+
+
+def _reference_counts_for_training(df_in):
+    if "referencia" not in df_in.columns:
+        return {}
+    df_count = df_in.copy()
+    if "densidade" in df_count.columns:
+        df_count = df_count[df_count["densidade"] != 0]
+    refs_series = df_count["referencia"].dropna().astype(str).str.strip()
+    refs_series = refs_series[refs_series != ""]
+    return refs_series.value_counts().to_dict()
+
+
+def _parse_refs_input(raw, refs):
+    raw = (raw or "").strip()
+    if raw == "":
+        return None, "no references provided"
+
+    for ref in refs:
+        if ref.lower() == raw.lower():
+            return [ref], None
+
+    delimiter = ";" if ";" in raw else ","
+    tokens = [t.strip() for t in raw.split(delimiter) if t.strip()]
+    if not tokens:
+        return None, "no references provided"
+
+    chosen = []
+    for token in tokens:
+        selected = None
+        if token.isdigit():
+            idx = int(token)
+            if 1 <= idx <= len(refs):
+                selected = refs[idx - 1]
+            else:
+                return None, f"index out of range: {token}"
+        else:
+            for ref in refs:
+                if ref.lower() == token.lower():
+                    selected = ref
+                    break
+            if selected is None:
+                return None, f"unknown reference: {token}"
+
+        if selected not in chosen:
+            chosen.append(selected)
+
+    return chosen, None
+
+
+selected_refs = []
+refs = _available_refs(df)
+ref_counts = _reference_counts_for_training(df)
+total_count = int(sum(ref_counts.values()))
+env_refs = os.environ.get("ML_SAL_REFERENCIAS", "").strip()
+
+if env_refs and refs:
+    if env_refs.lower() not in {"all", "*"}:
+        parsed, err = _parse_refs_input(env_refs, refs)
+        if err:
+            print(f"❌ Invalid ML_SAL_REFERENCIAS: {err}")
+            raise SystemExit(1)
+        selected_refs = parsed
+elif refs:
+    print("\n🧪 Training scope by reference")
+    print(f"1. All references (default, n={total_count})")
+    print("2. One reference")
+    print("3. Multiple references")
+    while True:
+        scope = input("Choice [1-3, default 1]: ").strip()
+        if scope in {"", "1"}:
+            break
+        if scope == "2":
+            print("\nAvailable references:")
+            for idx, ref in enumerate(refs, start=1):
+                print(f"{idx}. {ref} (n={ref_counts.get(ref, 0)})")
+            raw = input("Reference (name or number): ").strip()
+            parsed, err = _parse_refs_input(raw, refs)
+            if err:
+                print(f"❌ Invalid selection: {err}")
+                continue
+            selected_refs = [parsed[0]]
+            break
+        if scope == "3":
+            print("\nAvailable references:")
+            for idx, ref in enumerate(refs, start=1):
+                print(f"{idx}. {ref} (n={ref_counts.get(ref, 0)})")
+            raw = input(
+                "References (numbers comma-separated, or names semicolon-separated): "
+            ).strip()
+            parsed, err = _parse_refs_input(raw, refs)
+            if err:
+                print(f"❌ Invalid selection: {err}")
+                continue
+            selected_refs = parsed
+            break
+        print("❌ Invalid option.")
+
+if selected_refs:
+    df = df[df["referencia"].astype(str).str.strip().isin(selected_refs)].reset_index(drop=True)
+    print(f"🎯 Training scope: {len(selected_refs)} reference(s): {', '.join(selected_refs)}")
+else:
+    print("🎯 Training scope: all references.")
+
+if df.empty:
+    print("❌ No rows available after reference filter.")
     raise SystemExit(1)
 
 # =========================
@@ -66,6 +187,15 @@ X_final = pd.DataFrame(
     columns=NUM_COLS
 )
 
+n_samples = len(X_final)
+poly_min_samples = int(os.environ.get("ML_SAL_MIN_SAMPLES_POLY", "120"))
+use_poly_models = n_samples >= poly_min_samples
+if not use_poly_models:
+    print(
+        f"⚠️ Polynomial models disabled (n={n_samples} < {poly_min_samples}) "
+        "to avoid numeric instability."
+    )
+
 # =========================
 # Split
 # =========================
@@ -92,7 +222,12 @@ model.fit(X_train, y_train)
 # =========================
 y_pred = model.predict(X_test)
 
-r2 = r2_score(y_test, y_pred)
+if len(y_test) >= 2:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UndefinedMetricWarning)
+        r2 = r2_score(y_test, y_pred)
+else:
+    r2 = float("nan")
 rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 y_std = y_test.std()
 rmse_rel = rmse / y_std if y_std != 0 else float("nan")
@@ -104,28 +239,33 @@ print(f"RMSE/STD(y) = {rmse_rel:.3f}")
 
 
 def evaluate_model(name, estimator, X_tr, y_tr, X_te, y_te, y_std_value):
-    estimator.fit(X_tr, y_tr)
-    preds = estimator.predict(X_te)
-    r2_v = r2_score(y_te, preds)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", RuntimeWarning)
+        warnings.simplefilter("ignore", UndefinedMetricWarning)
+        with np.errstate(all="ignore"):
+            estimator.fit(X_tr, y_tr)
+            preds = estimator.predict(X_te)
+
+    if not np.isfinite(preds).all():
+        return None
+
+    if len(y_te) >= 2:
+        r2_v = r2_score(y_te, preds)
+    else:
+        r2_v = float("nan")
     rmse_v = np.sqrt(mean_squared_error(y_te, preds))
     rmse_rel_v = rmse_v / y_std_value if y_std_value != 0 else float("nan")
-    return (name, r2_v, rmse_v, rmse_rel_v)
+    runtime_warnings = sum(
+        1 for w in caught
+        if issubclass(w.category, RuntimeWarning)
+    )
+    return (name, r2_v, rmse_v, rmse_rel_v, runtime_warnings)
 
 
 models = [
     ("DummyMean", DummyRegressor(strategy="mean")),
     ("Linear", LinearRegression()),
     ("Ridge", make_pipeline(StandardScaler(), Ridge(alpha=1.0))),
-    ("Interactions_Ridge", make_pipeline(
-        PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
-        StandardScaler(),
-        Ridge(alpha=1.0),
-    )),
-    ("Poly2_Ridge", make_pipeline(
-        PolynomialFeatures(degree=2, include_bias=False),
-        StandardScaler(),
-        Ridge(alpha=1.0),
-    )),
     ("RandomForest", RandomForestRegressor(
         n_estimators=300,
         random_state=42,
@@ -138,12 +278,27 @@ models = [
     )),
     ("GradientBoosting", GradientBoostingRegressor(random_state=42)),
 ]
+if use_poly_models:
+    models.insert(3, ("Interactions_Ridge", make_pipeline(
+        PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
+        StandardScaler(),
+        Ridge(alpha=1.0),
+    )))
+    models.insert(4, ("Poly2_Ridge", make_pipeline(
+        PolynomialFeatures(degree=2, include_bias=False),
+        StandardScaler(),
+        Ridge(alpha=1.0),
+    )))
 
 print("\n📊 Model comparison (same train/test split)")
 split_metrics = []
 for name, est in models:
     m = evaluate_model(name, est, X_train, y_train, X_test, y_test, y_std)
-    print(f"{m[0]:<16} R²={m[1]:.3f}  RMSE={m[2]:.4f}  RMSE/STD={m[3]:.3f}")
+    if m is None:
+        print(f"{name:<16} skipped (non-finite predictions)")
+        continue
+    warn_note = "  [numeric warnings]" if m[4] > 0 else ""
+    print(f"{m[0]:<16} R²={m[1]:.3f}  RMSE={m[2]:.4f}  RMSE/STD={m[3]:.3f}{warn_note}")
     split_metrics.append({
         "name": m[0],
         "r2": m[1],
@@ -154,29 +309,61 @@ for name, est in models:
 # =========================
 # Cross-validation (more stable estimate)
 # =========================
-n_samples = len(X_final)
 cv_metrics = []
 if n_samples < 2:
     print("\n⚠️  Not enough samples for cross-validation.")
 else:
-    n_splits = 5 if n_samples >= 5 else 2
+    def _recommended_n_splits(n):
+        if n < 30:
+            return 2
+        if n < 80:
+            return 3
+        if n < 150:
+            return 4
+        return 5
+
+    n_splits = min(_recommended_n_splits(n_samples), n_samples)
+    n_splits = max(2, n_splits)
     cv = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    scoring = {"r2": "r2", "mse": "neg_mean_squared_error"}
+    include_cv_r2 = n_samples >= 4
+    scoring = {"mse": "neg_mean_squared_error"}
+    if include_cv_r2:
+        scoring["r2"] = "r2"
+    else:
+        print("⚠️ R² omitted in CV (too few samples per fold).")
     y_std_all = y.std()
 
     print(f"\n📈 Cross-validation (KFold, n_splits={n_splits})")
     for name, est in models:
-        cv_results = cross_validate(est, X_final, y, cv=cv, scoring=scoring)
-        r2_mean = cv_results["test_r2"].mean()
-        r2_std = cv_results["test_r2"].std()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
+            warnings.simplefilter("ignore", UndefinedMetricWarning)
+            with np.errstate(all="ignore"):
+                try:
+                    cv_results = cross_validate(est, X_final, y, cv=cv, scoring=scoring)
+                except Exception as exc:
+                    print(f"{name:<16} skipped in CV ({exc})")
+                    continue
+
+        if include_cv_r2:
+            r2_mean = cv_results["test_r2"].mean()
+            r2_std = cv_results["test_r2"].std()
+        else:
+            r2_mean = float("nan")
+            r2_std = float("nan")
         rmse_vals = np.sqrt(-cv_results["test_mse"])
         rmse_mean = rmse_vals.mean()
         rmse_std = rmse_vals.std()
         rmse_rel_mean = rmse_mean / y_std_all if y_std_all != 0 else float("nan")
+        runtime_warnings = sum(
+            1 for w in caught
+            if issubclass(w.category, RuntimeWarning)
+        )
+        warn_note = "  [numeric warnings]" if runtime_warnings > 0 else ""
         print(
             f"{name:<16} R²={r2_mean:.3f}±{r2_std:.3f}  "
             f"RMSE={rmse_mean:.4f}±{rmse_std:.4f}  "
-            f"RMSE/STD={rmse_rel_mean:.3f}"
+            f"RMSE/STD={rmse_rel_mean:.3f}{warn_note}"
         )
         cv_metrics.append({
             "name": name,
@@ -190,33 +377,40 @@ else:
 # =========================
 # Top interaction coefficients (Ridge with interactions)
 # =========================
-print("\n🔎 Top interaction coefficients (Interactions_Ridge)")
-interactions_model = make_pipeline(
-    PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
-    StandardScaler(),
-    Ridge(alpha=1.0),
-)
-interactions_model.fit(X_final, y)
-poly = interactions_model.named_steps["polynomialfeatures"]
-ridge = interactions_model.named_steps["ridge"]
+if use_poly_models:
+    print("\n🔎 Top interaction coefficients (Interactions_Ridge)")
+    interactions_model = make_pipeline(
+        PolynomialFeatures(degree=2, include_bias=False, interaction_only=True),
+        StandardScaler(),
+        Ridge(alpha=1.0),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        with np.errstate(all="ignore"):
+            interactions_model.fit(X_final, y)
+    poly = interactions_model.named_steps["polynomialfeatures"]
+    ridge = interactions_model.named_steps["ridge"]
 
-try:
-    feature_names = poly.get_feature_names_out(NUM_COLS)
-except AttributeError:
-    feature_names = poly.get_feature_names(NUM_COLS)
+    try:
+        feature_names = poly.get_feature_names_out(NUM_COLS)
+    except AttributeError:
+        feature_names = poly.get_feature_names(NUM_COLS)
 
-coefs = ridge.coef_.ravel()
-interaction_terms = []
-for name, coef in zip(feature_names, coefs):
-    if " " in name:
-        interaction_terms.append((name.replace(" ", " * "), float(coef)))
+    coefs = ridge.coef_.ravel()
+    interaction_terms = []
+    for name, coef in zip(feature_names, coefs):
+        if " " in name:
+            interaction_terms.append((name.replace(" ", " * "), float(coef)))
 
-interaction_terms.sort(key=lambda x: abs(x[1]), reverse=True)
-if interaction_terms:
-    for name, coef in interaction_terms[:10]:
-        print(f"{name:<30} coef={coef:+.4f}")
+    interaction_terms.sort(key=lambda x: abs(x[1]), reverse=True)
+    if interaction_terms:
+        for name, coef in interaction_terms[:10]:
+            print(f"{name:<30} coef={coef:+.4f}")
+    else:
+        print("No interaction terms found.")
 else:
-    print("No interaction terms found.")
+    print("\n🔎 Top interaction coefficients (Interactions_Ridge)")
+    print("Skipped (polynomial models disabled for small sample size).")
 
 # =========================
 # Scatter + correlation per feature
@@ -310,14 +504,18 @@ def _pick_model_name(model_names, default_name):
 
 model_dict = {name: est for name, est in models if name != "DummyMean"}
 model_names = list(model_dict.keys())
+if not split_metrics:
+    print("\n❌ No stable model metrics available to choose/save.")
+    raise SystemExit(1)
 split_best = min(
     [m for m in split_metrics if m["name"] in model_dict],
     key=lambda m: m["rmse"],
 )
 cv_best = None
-if cv_metrics:
+cv_candidates = [m for m in cv_metrics if m["name"] in model_dict]
+if cv_candidates:
     cv_best = min(
-        [m for m in cv_metrics if m["name"] in model_dict],
+        cv_candidates,
         key=lambda m: m["rmse_mean"],
     )
 

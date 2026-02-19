@@ -2,6 +2,8 @@ import sqlite3
 from datetime import datetime
 import sys
 
+UNIQUE_INDEX_NAME = "ux_desvios_sal_lote_ref_cuba"
+
 # ======================================================
 # FULLY SAFE INPUT FUNCTIONS
 # ======================================================
@@ -173,6 +175,15 @@ def input_referencia(cursor):
 
 conn = sqlite3.connect("ml_sal.db")
 cursor = conn.cursor()
+try:
+    cursor.execute(
+        f"""
+        CREATE UNIQUE INDEX IF NOT EXISTS {UNIQUE_INDEX_NAME}
+        ON desvios_sal (lote, referencia, cuba)
+        """
+    )
+except sqlite3.IntegrityError:
+    pass
 
 print("\n📥 MANUAL INSERT OF NEW DEVIATION")
 print("=" * 60)
@@ -268,6 +279,25 @@ print(f"Density            : {densidade}")
 print(f"Temperature        : {temperatura}")
 print(f"Minutes out        : {min_fora}")
 print(f"Time out spec      : {tempo_fora_espec}")
+
+cursor.execute(
+    """
+    SELECT id, data
+    FROM desvios_sal
+    WHERE lote = ? AND referencia = ? AND cuba = ?
+    LIMIT 1
+    """,
+    (lote, referencia, cuba)
+)
+existing = cursor.fetchone()
+if existing is not None:
+    print(
+        "\n❌ A record with the same (batch, reference, vat) already exists:"
+        f"\n➡️ Existing ID: {existing[0]} | Date: {existing[1]}"
+        "\n➡️ Insertion canceled to protect uniqueness."
+    )
+    conn.close()
+    sys.exit(1)
 
 confirmar = input("\nConfirm insertion? (y/n): ")
 if confirmar is None or confirmar.strip().lower() != "y":
